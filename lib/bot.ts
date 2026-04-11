@@ -8,19 +8,17 @@ if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
 
 export const bot = new Bot(token);
 
-bot.command("start", (ctx) =>
-  ctx.reply(
+bot.command(["start", "tvy", "hey_tvy", "hi_tvy", "hello_tvy"], async (ctx) => {
+  await ctx.reply(
     "👋 Hi! I'm  personal assistant of Vannyou.\n\n" +
       "Available commands:\n" +
       "/owe — see if Vannyou owes you or you owe Vannyou any money\n" +
       "/qr — get KHQR code to pay Vannyou if you owe him money",
-  ),
-);
-
-// TEMPORARY: send this sticker to the bot to get its file_id, then remove this handler
-bot.on("message:sticker", (ctx) =>
-  ctx.reply(`Sticker file_id:\n${ctx.message.sticker.file_id}`),
-);
+  );
+  return ctx.replyWithSticker(
+    "CAACAgUAAxkBAAMHadp2j926kQ_JshGZsD4LxsQ-sKsAAnEFAAK9lPBWUYQTpHJGzMM7BA",
+  );
+});
 
 bot.command("qr", (ctx) => {
   const qrPath = path.join(process.cwd(), "data", "qr.png");
