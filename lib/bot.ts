@@ -10,20 +10,27 @@ export const bot = new Bot(token);
 
 bot.command("start", (ctx) =>
   ctx.reply(
-    "👋 Hi! I'm your personal debt tracker assistant.\n\n" +
+    "👋 Hi! I'm  personal assistant of Vannyou.\n\n" +
       "Available commands:\n" +
-      "/balance — see your balance with me\n" +
-      "/pay — get my payment QR code",
+      "/owe — see if Vannyou owes you or you owe Vannyou any money\n" +
+      "/qr — get KHQR code to pay Vannyou if you owe him money",
   ),
 );
 
-bot.command("pay", (ctx) => {
+// TEMPORARY: send this sticker to the bot to get its file_id, then remove this handler
+bot.on("message:sticker", (ctx) =>
+  ctx.reply(`Sticker file_id:\n${ctx.message.sticker.file_id}`),
+);
+
+bot.command("qr", (ctx) => {
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  return ctx.replyWithPhoto(file, { caption: "Scan to pay via KHQR." });
+  return ctx.replyWithPhoto(file, {
+    caption: "Scan to pay via KHQR to Vannyou.",
+  });
 });
 
-bot.command("balance", (ctx) => {
+bot.command("owe", (ctx) => {
   const username = ctx.from?.username;
 
   if (!username) {
@@ -44,7 +51,7 @@ bot.command("balance", (ctx) => {
   ];
 
   if (record.owes_me > 0) {
-    lines.push(`💸 You owe me: $${record.owes_me.toFixed(2)}`);
+    lines.push(`💸 You owe Vannyou: $${record.owes_me.toFixed(2)}`);
     lines.push("  Items:");
     for (const item of record.items) {
       lines.push(
@@ -54,15 +61,15 @@ bot.command("balance", (ctx) => {
   }
 
   if (record.i_owe > 0) {
-    lines.push(`💰 I owe you: $${record.i_owe.toFixed(2)}`);
+    lines.push(`💰 Vannyou owes you: $${record.i_owe.toFixed(2)}`);
   }
 
   const net = record.owes_me - record.i_owe;
   lines.push("");
   if (net > 0) {
-    lines.push(`📊 Net: you owe me $${net.toFixed(2)}`);
+    lines.push(`📊 Net: you owe Vannyou $${net.toFixed(2)}`);
   } else if (net < 0) {
-    lines.push(`📊 Net: I owe you $${Math.abs(net).toFixed(2)}`);
+    lines.push(`📊 Net: Vannyou owes you $${Math.abs(net).toFixed(2)}`);
   } else {
     lines.push("📊 Net: all settled up!");
   }
