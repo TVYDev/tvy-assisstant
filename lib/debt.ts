@@ -130,7 +130,9 @@ export async function getDebtByShortcode(
   if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
   if (!data) return null;
 
-  const tuArr = data.telegram_users as { first_name: string; last_name?: string }[] | null;
+  const tuArr = data.telegram_users as
+    | { first_name: string; last_name?: string }[]
+    | null;
   const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
   const name = tu
     ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
@@ -202,6 +204,58 @@ export async function cancelDebtItem(
   return { shortcode, amount };
 }
 
+export async function updateDebtItem(
+  itemId: number,
+  newAmount: number,
+  newDescription: string,
+): Promise<{ shortcode: string; oldAmount: number; newAmount: number } | null> {
+  const { data: item, error: fetchError } = await supabase
+    .from("debt_items")
+    .select("id, amount, paid, debt_record_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (fetchError)
+    throw new Error(`Failed to fetch item: ${fetchError.message}`);
+  if (!item) return null;
+
+  const oldAmount = Number((item as { amount: number }).amount);
+  const isPaid = Boolean((item as { paid: boolean }).paid);
+
+  const { data: rec, error: recError } = await supabase
+    .from("debt_records")
+    .select("shortcode")
+    .eq("id", (item as { debt_record_id: number }).debt_record_id)
+    .single();
+  if (recError) throw new Error(`Failed to fetch record: ${recError.message}`);
+
+  const shortcode = (rec as { shortcode: string }).shortcode;
+
+  const { error: updateError } = await supabase
+    .from("debt_items")
+    .update({ amount: newAmount, description: newDescription })
+    .eq("id", itemId);
+  if (updateError)
+    throw new Error(`Failed to update item: ${updateError.message}`);
+
+  // Adjust owes_me only if the item is unpaid (paid items aren't counted)
+  if (!isPaid) {
+    const diff = newAmount - oldAmount;
+    if (diff > 0) {
+      await supabase.rpc("increment_owes_me", {
+        p_shortcode: shortcode,
+        p_amount: diff,
+      });
+    } else if (diff < 0) {
+      await supabase.rpc("decrement_owes_me", {
+        p_shortcode: shortcode,
+        p_amount: -diff,
+      });
+    }
+  }
+
+  return { shortcode, oldAmount, newAmount };
+}
+
 export async function getDebtByUsername(
   username: string,
 ): Promise<DebtRecord | null> {
@@ -228,7 +282,9 @@ export async function getDebtByUsername(
   if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
   if (!data) return null;
 
-  const tuArr = data.telegram_users as { first_name: string; last_name?: string }[] | null;
+  const tuArr = data.telegram_users as
+    | { first_name: string; last_name?: string }[]
+    | null;
   const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
   const name = tu
     ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")

@@ -19,6 +19,7 @@ import {
   markAllPaid,
   cancelDebtItem,
   toggleDebtItemPaid,
+  updateDebtItem,
   getAllDebtRecords,
 } from "./debt";
 
@@ -261,6 +262,37 @@ bot.command("paid", async (ctx) => {
 
   await Promise.all([markAllPaid(shortcode), markYouTubePaid(shortcode)]);
   return ctx.reply(`🧹 All wiped! ${shortcode} is clean now — fresh start! 🎉`);
+});
+
+// Owner-only: /updatedebt <item_id> <new_amount> <new_description> — correct a debt entry
+bot.command("updatedebt", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  const parts = args.match(/^(\d+)\s+([\d.]+)\s+(.+)$/);
+
+  if (!parts) {
+    return ctx.reply(
+      "Usage: /updatedebt <item_id> <new_amount> <new_description>\nExample: /updatedebt 12 20.00 Dinner at restaurant",
+    );
+  }
+
+  const [, itemIdStr, amountStr, description] = parts;
+  const itemId = parseInt(itemIdStr);
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) {
+    return ctx.reply("Amount must be a positive number.");
+  }
+
+  const result = await updateDebtItem(itemId, amount, description);
+  if (!result) return ctx.reply(`No debt item found with ID #${itemId}.`);
+
+  return ctx.reply(
+    `✏️ Updated! Debt #${itemId} for ${result.shortcode}: $${result.oldAmount.toFixed(2)} → $${result.newAmount.toFixed(2)}\nDescription: ${description}`,
+  );
 });
 
 // Owner-only: /canceldebt <item_id> — remove a single debt item
