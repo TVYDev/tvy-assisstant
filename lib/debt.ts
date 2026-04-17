@@ -130,10 +130,8 @@ export async function getDebtByShortcode(
   if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
   if (!data) return null;
 
-  const tu = data.telegram_users as {
-    first_name: string;
-    last_name?: string;
-  } | null;
+  const tuArr = data.telegram_users as { first_name: string; last_name?: string }[] | null;
+  const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
   const name = tu
     ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
     : code;
@@ -230,10 +228,8 @@ export async function getDebtByUsername(
   if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
   if (!data) return null;
 
-  const tu = data.telegram_users as {
-    first_name: string;
-    last_name?: string;
-  } | null;
+  const tuArr = data.telegram_users as { first_name: string; last_name?: string }[] | null;
+  const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
   const name = tu
     ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
     : user.shortcode;
@@ -284,10 +280,11 @@ export async function getAllDebtRecords(): Promise<DebtRecord[]> {
       owes_me: number;
       i_owe: number;
       debt_items: DebtItem[];
-      telegram_users: { first_name: string; last_name?: string } | null;
+      telegram_users: { first_name: string; last_name?: string }[] | null;
     }>
   ).map((row) => {
-    const tu = row.telegram_users;
+    const tuArr = row.telegram_users;
+    const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
     const name = tu
       ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
       : row.shortcode;
