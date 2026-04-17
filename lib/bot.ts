@@ -126,10 +126,21 @@ bot.command(
   ],
   async (ctx) => {
     await ctx.reply(
-      "👋 Hey hey! I'm Dino 🦕 (aka Nailong)\nVannyou's loyal little assistant — doing his dirty work so he doesn't have to. 😂\n\n" +
+      "👋 Hey hey! I'm Dino 🦕 (aka Nailong) — the round-bellied, silly-faced dino you never knew you needed!\n" +
+        "Vannyou's loyal little assistant, doing his dirty work so he doesn't have to. 😂\n" +
+        "\n" +
         "Here's what I can do for you:\n" +
         "/owe — check how much you owe Vannyou (or if he owes you, lucky you 👀)\n" +
-        "/qr — get the QR code to pay Vannyou 💸",
+        "/qr — get the KHQR code to pay Vannyou 💸\n" +
+        "/about — learn all about me, my responsibilities & current version 🦕\n" +
+        "\n" +
+        "What I do behind the scenes:\n" +
+        "📋 Track who owes Vannyou money and remind them (gently... or not 😈)\n" +
+        "📺 Monitor YouTube subscription payments every month\n" +
+        '⏰ Send monthly reminders so nobody conveniently "forgets" to pay\n' +
+        "🧾 Keep a detailed debt ledger so Vannyou never loses track\n" +
+        "\n" +
+        "I may have a round belly and a silly face, but my memory for unpaid debts is SHARP. 🦕🔪",
     );
     return ctx.replyWithSticker(
       "CAACAgUAAxkBAAMHadp2j926kQ_JshGZsD4LxsQ-sKsAAnEFAAK9lPBWUYQTpHJGzMM7BA",
@@ -141,20 +152,25 @@ bot.command("about", (ctx) => {
   return ctx.reply(
     `🦕 *About Dino (aka Nailong)* — v${version}\n` +
       "\n" +
-      "Hi! I'm Dino 🦕 — Vannyou's tiny, underpaid, overly enthusiastic assistant.\n" +
-      "I was hired because I work for snacks and never take sick days. 😂\n" +
+      "Meet *Dino* — aka Nailong, the lovable dino with a round belly, silly expressions, and a big heart! 🫶\n" +
+      "Originally a cheerful plush character beloved across the internet, Dino brings\n" +
+      "comfort, laughter, and a joyful presence to any space.\n" +
       "\n" +
-      "*What I do for a living:*\n" +
+      "In this chat, Dino moonlights as Vannyou's personal assistant. 😂\n" +
+      "Tiny? Yes. Round-bellied? Absolutely. Underpaid? Definitely. Reliable? ...mostly.\n" +
+      "\n" +
+      "*What Dino does for a living:*\n" +
       "📋 Track who owes Vannyou money (and gently shame them)\n" +
       "📺 Monitor YouTube subscription payments (so Vannyou doesn't have to)\n" +
       "💸 Show you how deep in the red you are via /owe\n" +
       "🔲 Provide the KHQR code for paying up via /qr\n" +
-      "⏰ Send monthly reminders when people forget to pay (shocker, they do)\n" +
+      '⏰ Fire monthly reminders when people "forget" to pay (shocker, they always do)\n' +
       "\n" +
-      "*Fun facts about me:*\n" +
-      "🦕 I'm a dinosaur, but I handle money better than most humans\n" +
-      "🤖 Powered by Node.js, Grammy, Supabase & pure dino energy\n" +
-      "😤 I have exactly ONE boss and it's not you (unless you're Vannyou)\n" +
+      "*Fun facts about Dino:*\n" +
+      "🦕 Round belly. Silly face. Zero chill about unpaid debts.\n" +
+      "🤖 Powered by Node.js, Grammy, Supabase & pure Nailong energy\n" +
+      "😤 Dino has exactly ONE boss and it's not you (unless you're Vannyou)\n" +
+      "🫶 True purpose: bring joy — the debt chasing is just a side hustle\n" +
       "\n" +
       `🔖 Version: ${version} | Built with 🦕 by Vannyou`,
     { parse_mode: "Markdown" },
@@ -545,22 +561,32 @@ bot.command("listusers", async (ctx) => {
 bot.command("help", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return ctx.reply(
-      "👋 Here's what I can do for you:\n\n" +
-        "/owe — check your balance with Vannyou\n" +
-        "/qr — get KHQR code to pay Vannyou",
+      "👋 Here's what Dino can do for you:\n" +
+        "\n" +
+        "👤 Public commands:\n" +
+        "  /owe — check your balance with Vannyou\n" +
+        "  /qr — get KHQR code to pay Vannyou\n" +
+        "  /about — learn about Dino (aka Nailong) & current version\n" +
+        "  /help — show this help message",
     );
   }
 
   return ctx.reply(
-    "📖 All commands:\n\n" +
+    "📖 All commands:\n" +
+      "\n" +
       "👤 Public:\n" +
       "  /owe — check your balance\n" +
       "  /qr — get KHQR payment QR code\n" +
+      "  /about — about Dino (aka Nailong) & version\n" +
+      "  /help — show this help message\n" +
       "\n" +
       "💸 Debt management:\n" +
       "  /adddebt <shortcode> <amount> <desc>\n" +
-      "    → Add debt item for someone\n" +
+      "    → Add a debt item for someone\n" +
       "    → e.g. /adddebt BSR 15.50 Lunch\n" +
+      "  /updatedebt <item_id> <amount> <desc>\n" +
+      "    → Correct an existing debt item\n" +
+      "    → e.g. /updatedebt 12 20.00 Dinner\n" +
       "  /debts <shortcode>\n" +
       "    → View all debts + YouTube for someone\n" +
       "  /allowe\n" +
