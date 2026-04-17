@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { Bot, InputFile } from "grammy";
-import { getDebtByUsername } from "./debt";
+import { upsertTelegramUser } from "./youtube-subscription";
+import { buildOweMessage } from "./owe-message";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
@@ -41,7 +42,7 @@ bot.command("qr", (ctx) => {
   });
 });
 
-bot.command("owe", (ctx) => {
+bot.command("owe", async (ctx) => {
   const username = ctx.from?.username;
 
   if (!username) {
@@ -50,40 +51,17 @@ bot.command("owe", (ctx) => {
     );
   }
 
-  const record = getDebtByUsername(username);
+  const userId = ctx.from!.id;
 
-  if (!record) {
-    return ctx.reply("No records found for your username.");
-  }
+  // Keep telegram_users table up to date
+  await upsertTelegramUser({
+    telegram_user_id: userId,
+    telegram_username: ctx.from!.username,
+    first_name: ctx.from!.first_name,
+    last_name: ctx.from!.last_name,
+  });
 
-  const lines: string[] = [
-    `Balance summary for ${record.name} (@${username})`,
-    "",
-  ];
-
-  if (record.owes_me > 0) {
-    lines.push(`💸 You owe Vannyou: $${record.owes_me.toFixed(2)}`);
-    lines.push("  Items:");
-    for (const item of record.items) {
-      lines.push(
-        `  • ${item.description} — $${item.amount.toFixed(2)} (${item.date})`,
-      );
-    }
-  }
-
-  if (record.i_owe > 0) {
-    lines.push(`💰 Vannyou owes you: $${record.i_owe.toFixed(2)}`);
-  }
-
-  const net = record.owes_me - record.i_owe;
-  lines.push("");
-  if (net > 0) {
-    lines.push(`📊 Net: you owe Vannyou $${net.toFixed(2)}`);
-  } else if (net < 0) {
-    lines.push(`📊 Net: Vannyou owes you $${Math.abs(net).toFixed(2)}`);
-  } else {
-    lines.push("📊 Net: all settled up!");
-  }
-
-  return ctx.reply(lines.join("\n"));
+  const message = await buildOweMessage(userId, username);
+  if (!message) return ctx.reply("No records found for your username.");
+  return ctx.reply(message);
 });
