@@ -33,6 +33,66 @@ export async function upsertTelegramUser(user: TelegramUser): Promise<void> {
   );
 }
 
+export async function updateTelegramUserField(
+  shortcode: string,
+  field: "first_name" | "last_name" | "shortcode",
+  value: string,
+): Promise<boolean> {
+  const code = shortcode.toUpperCase();
+
+  if (field === "shortcode") {
+    const newCode = value.toUpperCase();
+    // Cascade manually: update related tables first (no FK cascade assumed)
+    await Promise.all([
+      supabase
+        .from("debt_records")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
+        .from("youtube_subscription_months")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
+        .from("youtube_subscription_members")
+        .update({ id: newCode })
+        .eq("id", code),
+    ]);
+    const { error } = await supabase
+      .from("telegram_users")
+      .update({ shortcode: newCode })
+      .eq("shortcode", code);
+    if (error) throw new Error(`Failed to update shortcode: ${error.message}`);
+  } else {
+    const { error } = await supabase
+      .from("telegram_users")
+      .update({ [field]: value })
+      .eq("shortcode", code);
+    if (error) throw new Error(`Failed to update ${field}: ${error.message}`);
+  }
+
+  return true;
+}
+
+export interface TelegramUserRow {
+  shortcode: string | null;
+  telegram_user_id: number | null;
+  telegram_username: string | null;
+  first_name: string;
+  last_name: string | null;
+}
+
+export async function getAllTelegramUsers(): Promise<TelegramUserRow[]> {
+  const { data, error } = await supabase
+    .from("telegram_users")
+    .select(
+      "shortcode, telegram_user_id, telegram_username, first_name, last_name",
+    )
+    .order("shortcode", { ascending: true, nullsFirst: false });
+
+  if (error) throw new Error(`Failed to fetch users: ${error.message}`);
+  return (data ?? []) as TelegramUserRow[];
+}
+
 export async function getConfig(key: string): Promise<string> {
   const { data, error } = await supabase
     .from("app_config")

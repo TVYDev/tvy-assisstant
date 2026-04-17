@@ -9,6 +9,8 @@ import {
   getConfig,
   getUnpaidMonthCountsAll,
   getTelegramUsernameByShortcode,
+  updateTelegramUserField,
+  getAllTelegramUsers,
 } from "./youtube-subscription";
 import { buildOweMessage } from "./owe-message";
 import {
@@ -421,4 +423,63 @@ bot.command("allowe", async (ctx) => {
   }
 
   return ctx.reply(lines.join("\n"));
+});
+
+// Owner-only: /updateuser <shortcode> <field> <value>
+// field: first_name | last_name | shortcode
+// Example: /updateuser BSR first_name Sophia
+bot.command("updateuser", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = (ctx.match?.trim() ?? "").match(
+    /^(\S+)\s+(first_name|last_name|shortcode)\s+(.+)$/,
+  );
+  if (!args) {
+    return ctx.reply(
+      "Usage: /updateuser <shortcode> <field> <value>\n" +
+        "Fields: first_name | last_name | shortcode\n" +
+        "Example: /updateuser BSR first_name Sophia",
+    );
+  }
+
+  const [, shortcode, field, value] = args as [
+    string,
+    string,
+    "first_name" | "last_name" | "shortcode",
+    string,
+  ];
+
+  await updateTelegramUserField(shortcode, field, value);
+
+  if (field === "shortcode") {
+    return ctx.reply(
+      `✅ Shortcode updated: ${shortcode.toUpperCase()} → ${value.toUpperCase()}\nAll related records cascade-updated! 🔄`,
+    );
+  }
+  return ctx.reply(
+    `✅ Updated ${field} for ${shortcode.toUpperCase()} to "${value}".`,
+  );
+});
+
+// Owner-only: /listusers — show all telegram_users
+bot.command("listusers", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const users = await getAllTelegramUsers();
+  if (users.length === 0)
+    return ctx.reply("🤔 No users found in the database yet.");
+
+  const lines = users.map((u) => {
+    const name = [u.first_name, u.last_name].filter(Boolean).join(" ");
+    const username = u.telegram_username ? ` @${u.telegram_username}` : "";
+    const id = u.telegram_user_id ? ` [${u.telegram_user_id}]` : " [no ID]";
+    const code = u.shortcode ? `[${u.shortcode}]` : "[no shortcode]";
+    return `${code} ${name}${username}${id}`;
+  });
+
+  return ctx.reply(`👥 All users (${users.length}):\n\n` + lines.join("\n"));
 });

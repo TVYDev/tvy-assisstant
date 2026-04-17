@@ -24,6 +24,14 @@ export async function addDebt(
   const code = shortcode.toUpperCase();
   const today = new Date().toISOString().split("T")[0];
 
+  // Ensure a telegram_users stub exists so the FK on debt_records is satisfied
+  await supabase
+    .from("telegram_users")
+    .upsert(
+      { shortcode: code, first_name: code },
+      { onConflict: "shortcode", ignoreDuplicates: true },
+    );
+
   // Upsert debt_record (create if not exists)
   await supabase
     .from("debt_records")
