@@ -483,3 +483,53 @@ bot.command("listusers", async (ctx) => {
 
   return ctx.reply(`👥 All users (${users.length}):\n\n` + lines.join("\n"));
 });
+
+// Owner-only: /help — list all commands
+bot.command("help", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return ctx.reply(
+      "👋 Here's what I can do for you:\n\n" +
+        "/owe — check your balance with Vannyou\n" +
+        "/qr — get KHQR code to pay Vannyou",
+    );
+  }
+
+  return ctx.reply(
+    "📖 All commands:\n\n" +
+      "👤 Public:\n" +
+      "  /owe — check your balance\n" +
+      "  /qr — get KHQR payment QR code\n" +
+      "\n" +
+      "💸 Debt management:\n" +
+      "  /adddebt <shortcode> <amount> <desc>\n" +
+      "    → Add debt item for someone\n" +
+      "    → e.g. /adddebt BSR 15.50 Lunch\n" +
+      "  /debts <shortcode>\n" +
+      "    → View all debts + YouTube for someone\n" +
+      "  /allowe\n" +
+      "    → Summary of everyone who owes\n" +
+      "  /paid <shortcode>\n" +
+      "    → Clear ALL debts + YouTube for someone\n" +
+      "  /canceldebt <item_id>\n" +
+      "    → Remove a specific debt item\n" +
+      "  /debtpaid <item_id>\n" +
+      "    → Mark a debt item as paid\n" +
+      "  /debtunpaid <item_id>\n" +
+      "    → Mark a debt item as unpaid\n" +
+      "\n" +
+      "📺 YouTube subscription:\n" +
+      "  /ytpaid <shortcode> <YYYY-MM>\n" +
+      "    → Mark a month as paid (notifies group)\n" +
+      "    → e.g. /ytpaid PVS 2026-04\n" +
+      "  /ytunpaid <shortcode> <YYYY-MM>\n" +
+      "    → Mark a month as unpaid (notifies group)\n" +
+      "\n" +
+      "👥 User management:\n" +
+      "  /listusers\n" +
+      "    → List all telegram users in DB\n" +
+      "  /updateuser <shortcode> <field> <value>\n" +
+      "    → Update first_name | last_name | shortcode\n" +
+      "    → e.g. /updateuser BSR first_name Sophia\n" +
+      "    → Shortcode change cascades all records",
+  );
+});
