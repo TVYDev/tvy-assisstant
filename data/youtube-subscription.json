@@ -1,0 +1,10 @@
+{
+  "monthly_fee": 1.19,
+  "members": [
+    { "id": "EKV", "months_unpaid": 1 },
+    { "id": "BSR", "months_unpaid": 0 },
+    { "id": "TLH", "months_unpaid": 1 },
+    { "id": "PVS", "months_unpaid": 5 },
+    { "id": "MKR", "months_unpaid": 5 }
+  ]
+}
