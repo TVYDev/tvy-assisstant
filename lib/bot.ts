@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Bot, InputFile } from "grammy";
+import { version } from "../package.json";
 import {
   upsertTelegramUser,
   markYouTubePaid,
@@ -135,6 +136,30 @@ bot.command(
     );
   },
 );
+
+bot.command("about", (ctx) => {
+  return ctx.reply(
+    `🦕 *About Dino (aka Nailong)* — v${version}\n` +
+      "\n" +
+      "Hi! I'm Dino 🦕 — Vannyou's tiny, underpaid, overly enthusiastic assistant.\n" +
+      "I was hired because I work for snacks and never take sick days. 😂\n" +
+      "\n" +
+      "*What I do for a living:*\n" +
+      "📋 Track who owes Vannyou money (and gently shame them)\n" +
+      "📺 Monitor YouTube subscription payments (so Vannyou doesn't have to)\n" +
+      "💸 Show you how deep in the red you are via /owe\n" +
+      "🔲 Provide the KHQR code for paying up via /qr\n" +
+      "⏰ Send monthly reminders when people forget to pay (shocker, they do)\n" +
+      "\n" +
+      "*Fun facts about me:*\n" +
+      "🦕 I'm a dinosaur, but I handle money better than most humans\n" +
+      "🤖 Powered by Node.js, Grammy, Supabase & pure dino energy\n" +
+      "😤 I have exactly ONE boss and it's not you (unless you're Vannyou)\n" +
+      "\n" +
+      `🔖 Version: ${version} | Built with 🦕 by Vannyou`,
+    { parse_mode: "Markdown" },
+  );
+});
 
 bot.command("qr", (ctx) => {
   const qrPath = path.join(process.cwd(), "data", "qr.png");
