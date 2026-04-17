@@ -36,20 +36,20 @@ export async function buildOweMessage(
     lines.push(`💰 Vannyou owes you: $${record.i_owe.toFixed(2)}`);
   }
 
-  if (subscriptionMember && subscriptionMember.months_unpaid > 0) {
-    const subTotal = subscriptionMember.months_unpaid * monthlyFee;
+  if (subscriptionMember && subscriptionMember.unpaid_count > 0) {
+    const subTotal = subscriptionMember.unpaid_count * monthlyFee;
     lines.push("");
     lines.push(`📺 YouTube subscription: $${subTotal.toFixed(2)}`);
     lines.push(
-      `  • ${subscriptionMember.months_unpaid} month(s) × $${monthlyFee.toFixed(2)}`,
+      `  • ${subscriptionMember.unpaid_count} month(s) × $${monthlyFee.toFixed(2)}`,
     );
   }
 
   const debtOwesMe = record?.owes_me ?? 0;
   const debtIOwe = record?.i_owe ?? 0;
   const subOwed =
-    subscriptionMember && subscriptionMember.months_unpaid > 0
-      ? subscriptionMember.months_unpaid * monthlyFee
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? subscriptionMember.unpaid_count * monthlyFee
       : 0;
   const net = debtOwesMe + subOwed - debtIOwe;
 

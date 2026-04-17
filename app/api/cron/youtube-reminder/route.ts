@@ -5,8 +5,8 @@ import { InputFile } from "grammy";
 import { bot } from "@/lib/bot";
 import {
   getConfig,
-  getMembers,
-  incrementAllMonths,
+  insertCurrentMonthForAll,
+  getUnpaidMonthCountsAll,
   buildReminderMessage,
 } from "@/lib/youtube-subscription";
 
@@ -35,8 +35,9 @@ export async function GET(req: NextRequest) {
 
   const monthlyFee = parseFloat(await getConfig("youtube_monthly_fee"));
 
-  // dry_run: preview current state without incrementing
-  const members = dryRun ? await getMembers() : await incrementAllMonths();
+  // dry_run: preview current state without inserting new month
+  if (!dryRun) await insertCurrentMonthForAll();
+  const members = await getUnpaidMonthCountsAll();
 
   // Send QR photo with the debt summary caption
   const qrPath = path.join(process.cwd(), "data", "qr.png");

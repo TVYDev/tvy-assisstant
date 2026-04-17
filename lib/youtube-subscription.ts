@@ -1,8 +1,15 @@
 import { supabase } from "./supabase";
 
 export interface SubscriptionMember {
-  id: string;
-  months_unpaid: number;
+  id: string; // shortcode
+  unpaid_count: number;
+}
+
+export interface SubscriptionMonth {
+  id: number;
+  shortcode: string;
+  month: string; // YYYY-MM-DD
+  paid: boolean;
 }
 
 export interface TelegramUser {
@@ -38,13 +45,18 @@ export async function getConfig(key: string): Promise<string> {
   return (data as { value: string }).value;
 }
 
-export async function getMemberByTelegramIdentity(
-  userId: number,
-): Promise<SubscriptionMember | null> {
-  return getMemberByShortcodeFromUserId(userId);
+async function getUnpaidCountForShortcode(shortcode: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("youtube_subscription_months")
+    .select("id", { count: "exact", head: true })
+    .eq("shortcode", shortcode)
+    .eq("paid", false);
+
+  if (error) throw new Error(`Failed to count months: ${error.message}`);
+  return count ?? 0;
 }
 
-async function getMemberByShortcodeFromUserId(
+export async function getMemberByTelegramIdentity(
   userId: number,
 ): Promise<SubscriptionMember | null> {
   const { data: user, error: userError } = await supabase
@@ -79,36 +91,99 @@ export async function getMemberByUsername(
 async function getMemberByShortcode(
   shortcode: string,
 ): Promise<SubscriptionMember | null> {
-  const { data: member, error: memberError } = await supabase
+  const { data, error } = await supabase
     .from("youtube_subscription_members")
-    .select("id, months_unpaid")
+    .select("id")
     .eq("id", shortcode)
     .maybeSingle();
 
-  if (memberError)
-    throw new Error(`Failed to fetch member: ${memberError.message}`);
-  return member as SubscriptionMember | null;
+  if (error) throw new Error(`Failed to fetch member: ${error.message}`);
+  if (!data) return null;
+
+  const unpaid_count = await getUnpaidCountForShortcode(shortcode);
+  return { id: (data as { id: string }).id, unpaid_count };
 }
 
-export async function getMembers(): Promise<SubscriptionMember[]> {
+export async function getTelegramUsernameByShortcode(
+  shortcode: string,
+): Promise<string | null> {
   const { data, error } = await supabase
-    .from("youtube_subscription_members")
-    .select("id, months_unpaid")
-    .order("id");
+    .from("telegram_users")
+    .select("telegram_username, first_name")
+    .eq("shortcode", shortcode.toUpperCase())
+    .maybeSingle();
 
-  if (error) throw new Error(`Failed to fetch members: ${error.message}`);
-  return data as SubscriptionMember[];
+  if (error) throw new Error(`Failed to fetch telegram user: ${error.message}`);
+  if (!data) return null;
+  const row = data as { telegram_username?: string; first_name: string };
+  return row.telegram_username ?? row.first_name;
 }
 
-export async function incrementAllMonths(): Promise<SubscriptionMember[]> {
-  // Increment every member's unpaid month count by 1
-  const { error: rpcError } = await supabase.rpc(
-    "increment_all_youtube_months",
-  );
-  if (rpcError)
-    throw new Error(`Failed to increment months: ${rpcError.message}`);
+export async function getYouTubeMonthsForShortcode(
+  shortcode: string,
+): Promise<SubscriptionMonth[]> {
+  const { data, error } = await supabase
+    .from("youtube_subscription_months")
+    .select("id, shortcode, month, paid")
+    .eq("shortcode", shortcode.toUpperCase())
+    .order("month", { ascending: true });
 
-  return getMembers();
+  if (error) throw new Error(`Failed to fetch months: ${error.message}`);
+  return (data ?? []) as SubscriptionMonth[];
+}
+
+export async function toggleYouTubeMonthPaid(
+  shortcode: string,
+  month: string, // YYYY-MM
+  paid: boolean,
+): Promise<SubscriptionMonth | null> {
+  const normalized = shortcode.toUpperCase();
+  const monthDate = `${month}-01`; // convert YYYY-MM to YYYY-MM-01 for DATE column
+
+  const { data, error } = await supabase
+    .from("youtube_subscription_months")
+    .update({ paid })
+    .eq("shortcode", normalized)
+    .eq("month", monthDate)
+    .select("id, shortcode, month, paid")
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to toggle month: ${error.message}`);
+  return data as SubscriptionMonth | null;
+}
+
+export async function markYouTubePaid(shortcode: string): Promise<void> {
+  const { error } = await supabase
+    .from("youtube_subscription_months")
+    .update({ paid: true })
+    .eq("shortcode", shortcode.toUpperCase());
+  if (error) throw new Error(`Failed to mark YouTube paid: ${error.message}`);
+}
+
+export async function insertCurrentMonthForAll(): Promise<void> {
+  const { error } = await supabase.rpc("insert_youtube_months_current");
+  if (error)
+    throw new Error(`Failed to insert current month: ${error.message}`);
+}
+
+export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
+  const [{ data: allMembers }, { data: unpaidRows }] = await Promise.all([
+    supabase.from("youtube_subscription_members").select("id").order("id"),
+    supabase
+      .from("youtube_subscription_months")
+      .select("shortcode")
+      .eq("paid", false),
+  ]);
+
+  const countMap = new Map<string, number>();
+  for (const row of (unpaidRows ?? []) as { shortcode: string }[]) {
+    countMap.set(row.shortcode, (countMap.get(row.shortcode) ?? 0) + 1);
+  }
+
+  return ((allMembers ?? []) as { id: string }[]).map((m) => ({
+    id: m.id,
+    unpaid_count: countMap.get(m.id) ?? 0,
+  }));
 }
 
 export function buildReminderMessage(
@@ -118,12 +193,12 @@ export function buildReminderMessage(
   const lines: string[] = [`Each = $${monthlyFee.toFixed(2)}`, "====="];
 
   for (const member of members) {
-    if (member.months_unpaid === 0) continue;
-    if (member.months_unpaid === 1) {
+    if (member.unpaid_count === 0) continue;
+    if (member.unpaid_count === 1) {
       lines.push(`⏳ ${member.id}`);
     } else {
-      const total = (member.months_unpaid * monthlyFee).toFixed(2);
-      lines.push(`⏳ ${member.id} x ${member.months_unpaid} = ${total}`);
+      const total = (member.unpaid_count * monthlyFee).toFixed(2);
+      lines.push(`⏳ ${member.id} x ${member.unpaid_count} = ${total}`);
     }
   }
 
