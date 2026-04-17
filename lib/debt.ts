@@ -42,14 +42,12 @@ export async function addDebt(
     throw new Error(`Failed to get debt record: ${recError.message}`);
 
   // Insert debt item
-  const { error: itemError } = await supabase
-    .from("debt_items")
-    .insert({
-      debt_record_id: (rec as { id: number }).id,
-      description,
-      amount,
-      date: today,
-    });
+  const { error: itemError } = await supabase.from("debt_items").insert({
+    debt_record_id: (rec as { id: number }).id,
+    description,
+    amount,
+    date: today,
+  });
   if (itemError)
     throw new Error(`Failed to insert debt item: ${itemError.message}`);
 
@@ -245,6 +243,21 @@ export async function getDebtByUsername(
       paid: Boolean(item.paid),
     })),
   };
+}
+
+export async function getDebtByUserId(
+  userId: number,
+): Promise<DebtRecord | null> {
+  const { data: user, error: userError } = await supabase
+    .from("telegram_users")
+    .select("shortcode")
+    .eq("telegram_user_id", userId)
+    .maybeSingle();
+
+  if (userError) throw new Error(`Failed to fetch user: ${userError.message}`);
+  if (!user?.shortcode) return null;
+
+  return getDebtByShortcode(user.shortcode);
 }
 
 export async function getAllDebtRecords(): Promise<DebtRecord[]> {

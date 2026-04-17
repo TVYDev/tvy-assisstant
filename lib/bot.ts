@@ -41,6 +41,71 @@ function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   return ctx.reply(msg);
 }
 
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+const QR_CAPTIONS = [
+  "Time to pay up! 💸 Scan this KHQR to send money to Vannyou.\nDino is watching to make sure you actually do it. 🦕👀",
+  "Here's your ticket to financial redemption! 🎟️ Scan and pay Vannyou before Dino comes for you. 🦕",
+  "One scan away from being a good person! 😇 Do it. Pay Vannyou. 💸",
+  "Scan it. Pay it. Don't make Dino chase you. 🦕💨",
+  "KHQR loaded! 🔫 Aim your phone at it and shoot some money to Vannyou. 💸😂",
+];
+
+const NO_RECORD_REPLIES = [
+  "Hmm, I got nothing on you 🤔 Either you're totally clean... or you just don't exist in my records yet!",
+  "No records found! 👀 Either you owe nothing (nice!) or Vannyou forgot to add you 😆",
+  "Clean slate! 🧼 Or maybe you're just not in the system yet. Ask Vannyou! 🦕",
+  "Dino searched everywhere... nothing! 🦕 You're either debt-free or a ghost. 👻",
+];
+
+const YT_PAID_MSGS_ELDER = [
+  (mention: string, month: string) =>
+    `🙏 អរគុណច្រើន ${mention} បង for paying YouTube (${month})! You are the most reliable one here, as always! 🎉`,
+  (mention: string, month: string) =>
+    `✨ ${mention} បង came through again for ${month}! Consistent king/queen energy. We appreciate you! 🙌`,
+  (mention: string, month: string) =>
+    `💛 Thank you ${mention} បង! YouTube ${month} is settled — you never disappoint! 🙏`,
+  (mention: string, month: string) =>
+    `🌟 ${mention} បង paid for ${month}! As expected from the most dependable one in the group. អរគុណ! 🎊`,
+];
+
+const YT_PAID_MSGS = [
+  (mention: string, month: string) =>
+    `🚨 BREAKING NEWS: ${mention} paid for YouTube (${month})!! Is this real life?? Thank you!! 😂🎊`,
+  (mention: string, month: string) =>
+    `🎉 PLOT TWIST: ${mention} actually paid for ${month}!! The legend has arrived!! 🦕🙌`,
+  (mention: string, month: string) =>
+    `📢 ATTENTION: ${mention} just paid YouTube for ${month}! Mark this day in history! 🗓️😂`,
+  (mention: string, month: string) =>
+    `🏆 ${mention} paid for ${month}!! Dino would like to personally award you the "Actually Paid" trophy 🦕🏆`,
+  (mention: string, month: string) =>
+    `💸 Money received from ${mention} for ${month}! Vannyou is happy, Dino is happy, everyone is happy! 🥳`,
+];
+
+const YT_UNPAID_MSGS_ELDER = [
+  (mention: string, month: string) =>
+    `😊 Hey ${mention} បង, just a gentle heads-up — YouTube for ${month} is showing unpaid. No rush, whenever you're free! 🙏`,
+  (mention: string, month: string) =>
+    `🙏 ${mention} បង, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
+  (mention: string, month: string) =>
+    `💛 Just a friendly nudge for ${mention} បង — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
+];
+
+const YT_UNPAID_MSGS = [
+  (mention: string, month: string) =>
+    `👀 Hey ${mention}... Dino noticed your YouTube for ${month} is unpaid 🦕 The tab is still running! 😬`,
+  (mention: string, month: string) =>
+    `🦕 Psst ${mention}... your YouTube tab for ${month} is still open. Dino is taking notes. 👀`,
+  (mention: string, month: string) =>
+    `😅 Sooo ${mention}... about that YouTube payment for ${month}... it's not gonna pay itself! 💸`,
+  (mention: string, month: string) =>
+    `⏰ Tick tock ${mention}! YouTube ${month} is still unpaid. Dino has a long memory. 🦕📋`,
+  (mention: string, month: string) =>
+    `🔔 Reminder for ${mention}: YouTube ${month} = still unpaid. Just saying. No pressure. (There's pressure.) 😂`,
+];
+
 export const bot = new Bot(token);
 
 bot.command(
@@ -57,10 +122,10 @@ bot.command(
   ],
   async (ctx) => {
     await ctx.reply(
-      "👋 Hi!\nI'm Dino (aka Nailong). I'm a personal assistant to my boss, VANNYOU.\nI'll assist anything I can for him.\n\n" +
-        "Available commands:\n" +
-        "/owe — see if Vannyou owes you or you owe Vannyou any money\n" +
-        "/qr — get KHQR code to pay Vannyou if you owe him money",
+      "👋 Hey hey! I'm Dino 🦕 (aka Nailong)\nVannyou's loyal little assistant — doing his dirty work so he doesn't have to. 😂\n\n" +
+        "Here's what I can do for you:\n" +
+        "/owe — check how much you owe Vannyou (or if he owes you, lucky you 👀)\n" +
+        "/qr — get the QR code to pay Vannyou 💸",
     );
     return ctx.replyWithSticker(
       "CAACAgUAAxkBAAMHadp2j926kQ_JshGZsD4LxsQ-sKsAAnEFAAK9lPBWUYQTpHJGzMM7BA",
@@ -72,19 +137,13 @@ bot.command("qr", (ctx) => {
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
   return ctx.replyWithPhoto(file, {
-    caption: "Scan to pay via KHQR to Vannyou.",
+    caption: pick(QR_CAPTIONS),
   });
 });
 
 bot.command("owe", async (ctx) => {
-  const username = ctx.from?.username;
-
-  if (!username) {
-    return ctx.reply(
-      "Could not determine your Telegram username. Please make sure you have one set.",
-    );
-  }
-
+  const username = ctx.from?.username ?? "";
+  const firstName = ctx.from?.first_name ?? "friend";
   const userId = ctx.from!.id;
 
   // Keep telegram_users table up to date
@@ -95,8 +154,8 @@ bot.command("owe", async (ctx) => {
     last_name: ctx.from!.last_name,
   });
 
-  const message = await buildOweMessage(userId, username);
-  if (!message) return ctx.reply("No records found for your username.");
+  const message = await buildOweMessage(userId, username, firstName);
+  if (!message) return ctx.reply(pick(NO_RECORD_REPLIES));
   return ctx.reply(message);
 });
 
@@ -125,7 +184,7 @@ bot.command("adddebt", async (ctx) => {
 
   await addDebt(shortcode, amount, description);
   return ctx.reply(
-    `✅ Added $${amount.toFixed(2)} debt for ${shortcode.toUpperCase()}\nReason: ${description}`,
+    `📝 Got it boss! Added $${amount.toFixed(2)} to ${shortcode.toUpperCase()}'s tab.\nReason: ${description} 😈`,
   );
 });
 
@@ -199,9 +258,7 @@ bot.command("paid", async (ctx) => {
     return ctx.reply("Usage: /paid <shortcode>\nExample: /paid BSR");
 
   await Promise.all([markAllPaid(shortcode), markYouTubePaid(shortcode)]);
-  return ctx.reply(
-    `✅ All debts cleared for ${shortcode} (general + YouTube subscription).`,
-  );
+  return ctx.reply(`🧹 All wiped! ${shortcode} is clean now — fresh start! 🎉`);
 });
 
 // Owner-only: /canceldebt <item_id> — remove a single debt item
@@ -218,7 +275,7 @@ bot.command("canceldebt", async (ctx) => {
   if (!result) return ctx.reply(`No debt item found with ID #${itemId}.`);
 
   return ctx.reply(
-    `✅ Cancelled debt item #${itemId} ($${result.amount.toFixed(2)}) for ${result.shortcode}.`,
+    `🗑️ Poof! Debt #${itemId} ($${result.amount.toFixed(2)}) for ${result.shortcode} — gone! Never happened. 😅`,
   );
 });
 
@@ -233,7 +290,7 @@ bot.command("debtpaid", async (ctx) => {
   const result = await toggleDebtItemPaid(itemId, true);
   if (!result) return ctx.reply(`No debt item found with ID #${itemId}.`);
   return ctx.reply(
-    `✅ Debt item #${itemId} ($${result.amount.toFixed(2)}) marked as paid for ${result.shortcode}.`,
+    `✅ Marked #${itemId} ($${result.amount.toFixed(2)}) as paid for ${result.shortcode}. They came through! 🙌`,
   );
 });
 
@@ -248,7 +305,7 @@ bot.command("debtunpaid", async (ctx) => {
   const result = await toggleDebtItemPaid(itemId, false);
   if (!result) return ctx.reply(`No debt item found with ID #${itemId}.`);
   return ctx.reply(
-    `⏳ Debt item #${itemId} ($${result.amount.toFixed(2)}) marked as unpaid for ${result.shortcode}.`,
+    `⏳ Marked #${itemId} ($${result.amount.toFixed(2)}) as unpaid for ${result.shortcode}. Back on the list! 😈`,
   );
 });
 
@@ -278,10 +335,10 @@ bot.command("ytpaid", async (ctx) => {
   if (YOUTUBE_GROUP_CHAT_ID) {
     const handle = await getTelegramUsernameByShortcode(result.shortcode);
     const mention = handle ? `@${handle}` : result.shortcode;
-    await bot.api.sendMessage(
-      YOUTUBE_GROUP_CHAT_ID,
-      `🎉 BREAKING NEWS: ${mention} actually paid for YouTube (${result.month.slice(0, 7)})!! The legend!! We are NOT worthy 🙇🙇🙇`,
-    );
+    const paidMsg = result.shortcode.startsWith("B")
+      ? pick(YT_PAID_MSGS_ELDER)(mention, result.month.slice(0, 7))
+      : pick(YT_PAID_MSGS)(mention, result.month.slice(0, 7));
+    await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, paidMsg);
   }
   return;
 });
@@ -308,10 +365,10 @@ bot.command("ytunpaid", async (ctx) => {
   if (YOUTUBE_GROUP_CHAT_ID) {
     const handle = await getTelegramUsernameByShortcode(result.shortcode);
     const mention = handle ? `@${handle}` : result.shortcode;
-    await bot.api.sendMessage(
-      YOUTUBE_GROUP_CHAT_ID,
-      `� Psst... ${mention}'s YouTube payment for ${result.month.slice(0, 7)} just got marked unpaid. No pressure buuuut... Dino is watching 🦕👀`,
-    );
+    const unpaidMsg = result.shortcode.startsWith("B")
+      ? pick(YT_UNPAID_MSGS_ELDER)(mention, result.month.slice(0, 7))
+      : pick(YT_UNPAID_MSGS)(mention, result.month.slice(0, 7));
+    await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, unpaidMsg);
   }
   return;
 });
@@ -357,10 +414,10 @@ bot.command("allowe", async (ctx) => {
   }
 
   if (lines.length === 2) {
-    lines.push("Everyone is settled up! ✨");
+    lines.push("Everyone is settled up!! We love to see it 🦕✨");
   } else {
     lines.push("");
-    lines.push(`💰 Grand total owed: $${grandTotal.toFixed(2)}`);
+    lines.push(`💰 Combined damage: $${grandTotal.toFixed(2)} 😅`);
   }
 
   return ctx.reply(lines.join("\n"));

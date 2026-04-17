@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const message = await buildOweMessage(userId, username);
+  const message = await buildOweMessage(userId, username, username);
   return NextResponse.json({
     message: message ?? "No records found for your username.",
   });
