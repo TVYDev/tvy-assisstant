@@ -28,7 +28,11 @@ export async function addDebt(
   await supabase
     .from("telegram_users")
     .upsert(
-      { shortcode: code, first_name: code },
+      {
+        shortcode: code,
+        first_name: code,
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: "shortcode", ignoreDuplicates: true },
     );
 
@@ -36,7 +40,13 @@ export async function addDebt(
   await supabase
     .from("debt_records")
     .upsert(
-      { shortcode: code, owes_me: 0, i_owe: 0 },
+      {
+        shortcode: code,
+        owes_me: 0,
+        i_owe: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: "shortcode", ignoreDuplicates: true },
     );
 
@@ -50,11 +60,14 @@ export async function addDebt(
     throw new Error(`Failed to get debt record: ${recError.message}`);
 
   // Insert debt item
+  const now = new Date().toISOString();
   const { error: itemError } = await supabase.from("debt_items").insert({
     debt_record_id: (rec as { id: number }).id,
     description,
     amount,
     date: today,
+    created_at: now,
+    updated_at: now,
   });
   if (itemError)
     throw new Error(`Failed to insert debt item: ${itemError.message}`);
