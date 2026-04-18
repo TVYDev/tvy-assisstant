@@ -12,6 +12,7 @@ import {
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
   getAllTelegramUsers,
+  getMemberByTelegramIdentity,
 } from "./youtube-subscription";
 import { buildOweMessage } from "./owe-message";
 import {
@@ -22,6 +23,7 @@ import {
   toggleDebtItemPaid,
   updateDebtItem,
   getAllDebtRecords,
+  getDebtByUserId,
 } from "./debt";
 
 const token = process.env.BOT_TOKEN;
@@ -55,6 +57,14 @@ const QR_CAPTIONS = [
   "One scan away from being a good person! 😇 Do it. Pay Vannyou. 💸",
   "Scan it. Pay it. Don't make Dino chase you. 🦕💨",
   "KHQR loaded! 🔫 Aim your phone at it and shoot some money to Vannyou. 💸😂",
+];
+
+const QR_NO_DEBT_CAPTIONS = [
+  "Just browsing? 👀 No debts found — you're clean! Here's the QR anyway, just in case you feel generous. 😂",
+  "Oh? You don't owe anything! 🎉 Dino approves. Here's the QR in case Vannyou's birthday is coming up. 🦕🎂",
+  "No debts detected! 🧼 But hey, here's the QR code — maybe you just like scanning things. No judgment. 🦕",
+  "Clean slate! ✨ You're all good with Vannyou. QR is here if you ever want to send a surprise. 💸😇",
+  "Dino checked the ledger... you owe nothing! 🦕 Here's the QR anyway — feel free to tip the dino. 😂",
 ];
 
 const NO_RECORD_REPLIES = [
@@ -177,11 +187,24 @@ bot.command("about", (ctx) => {
   );
 });
 
-bot.command("qr", (ctx) => {
+bot.command("qr", async (ctx) => {
+  const userId = ctx.from?.id ?? 0;
+
+  const [record, member, monthlyFee] = await Promise.all([
+    userId ? getDebtByUserId(userId) : Promise.resolve(null),
+    userId ? getMemberByTelegramIdentity(userId) : Promise.resolve(null),
+    getConfig("youtube_monthly_fee").then(parseFloat),
+  ]);
+
+  const debtOwesMe = record?.owes_me ?? 0;
+  const subOwed =
+    member && member.unpaid_count > 0 ? member.unpaid_count * monthlyFee : 0;
+  const net = debtOwesMe + subOwed - (record?.i_owe ?? 0);
+
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
   return ctx.replyWithPhoto(file, {
-    caption: pick(QR_CAPTIONS),
+    caption: net > 0 ? pick(QR_CAPTIONS) : pick(QR_NO_DEBT_CAPTIONS),
   });
 });
 
