@@ -92,9 +92,9 @@ export async function buildOweMessage(
 
   const name =
     record?.name ??
+    firstName ??
     record?.shortcode ??
     subscriptionMember?.id ??
-    firstName ??
     username;
   const lines: string[] = [pick(GREETINGS)(name, username), ""];
 

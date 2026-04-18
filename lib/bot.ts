@@ -484,14 +484,23 @@ bot.command("allowe", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const [debtRecords, ytMembers, monthlyFee] = await Promise.all([
+  const [debtRecords, ytMembers, monthlyFee, allUsers] = await Promise.all([
     getAllDebtRecords(),
     getUnpaidMonthCountsAll(),
     getConfig("youtube_monthly_fee").then(parseFloat),
+    getAllTelegramUsers(),
   ]);
 
   const debtMap = new Map(debtRecords.map((r) => [r.shortcode, r]));
   const ytMap = new Map(ytMembers.map((m) => [m.id, m.unpaid_count]));
+  const nameMap = new Map(
+    allUsers
+      .filter((u) => u.shortcode)
+      .map((u) => [
+        u.shortcode!,
+        [u.first_name, u.last_name].filter(Boolean).join(" "),
+      ]),
+  );
 
   // Collect all shortcodes from both sources
   const allShortcodes = new Set([...debtMap.keys(), ...ytMap.keys()]);
@@ -511,7 +520,7 @@ bot.command("allowe", async (ctx) => {
     if (total === 0) continue;
     grandTotal += total;
 
-    const name = record?.name ?? code;
+    const name = record?.name ?? nameMap.get(code) ?? code;
     lines.push(`👤 ${code} (${name}) — $${total.toFixed(2)} total`);
     if (unpaidDebt > 0) lines.push(`  💸 General: $${unpaidDebt.toFixed(2)}`);
     if (ytUnpaid > 0)
