@@ -189,6 +189,8 @@ bot.command("about", (ctx) => {
 
 bot.command("qr", async (ctx) => {
   const userId = ctx.from?.id ?? 0;
+  const username = ctx.from?.username ?? "";
+  const firstName = ctx.from?.first_name ?? "friend";
 
   const [record, member, monthlyFee] = await Promise.all([
     userId ? getDebtByUserId(userId) : Promise.resolve(null),
@@ -203,9 +205,14 @@ bot.command("qr", async (ctx) => {
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  return ctx.replyWithPhoto(file, {
-    caption: net > 0 ? pick(QR_CAPTIONS) : pick(QR_NO_DEBT_CAPTIONS),
-  });
+
+  if (net > 0) {
+    const oweMessage = await buildOweMessage(userId, username, firstName);
+    const caption = `${pick(QR_CAPTIONS)}${oweMessage ? `\n\n${oweMessage}` : ""}`;
+    return ctx.replyWithPhoto(file, { caption });
+  }
+
+  return ctx.replyWithPhoto(file, { caption: pick(QR_NO_DEBT_CAPTIONS) });
 });
 
 bot.command("owe", async (ctx) => {
