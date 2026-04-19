@@ -455,7 +455,9 @@ bot.command("ytpaid", async (ctx) => {
   // Multiple months
   const results = await bulkToggleYouTubeMonthsPaid(shortcode, months, true);
   if (!results.length)
-    return ctx.reply(`No matching months found for ${shortcode.toUpperCase()}.`);
+    return ctx.reply(
+      `No matching months found for ${shortcode.toUpperCase()}.`,
+    );
   const updated = results.map((r) => r.month.slice(0, 7)).join(", ");
   return ctx.reply(
     `✅ Marked ${results.length} month(s) as paid for ${shortcode.toUpperCase()}:\n${updated}`,
@@ -497,7 +499,9 @@ bot.command("ytunpaid", async (ctx) => {
   // Multiple months
   const results = await bulkToggleYouTubeMonthsPaid(shortcode, months, false);
   if (!results.length)
-    return ctx.reply(`No matching months found for ${shortcode.toUpperCase()}.`);
+    return ctx.reply(
+      `No matching months found for ${shortcode.toUpperCase()}.`,
+    );
   const updated = results.map((r) => r.month.slice(0, 7)).join(", ");
   return ctx.reply(
     `⏳ Marked ${results.length} month(s) as unpaid for ${shortcode.toUpperCase()}:\n${updated}`,
