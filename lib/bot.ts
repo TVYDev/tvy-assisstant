@@ -420,6 +420,43 @@ const YOUTUBE_GROUP_CHAT_ID = process.env.YOUTUBE_GROUP_CHAT_ID
   ? parseInt(process.env.YOUTUBE_GROUP_CHAT_ID)
   : null;
 
+async function notifyYtGroup(
+  shortcode: string,
+  month: string,
+  paid: boolean,
+): Promise<void> {
+  if (!YOUTUBE_GROUP_CHAT_ID) return;
+  const handle = await getTelegramUsernameByShortcode(shortcode);
+  const mention = handle ? `@${handle}` : shortcode;
+  const msg = paid
+    ? shortcode.startsWith("B")
+      ? pick(YT_PAID_MSGS_ELDER)(mention, month)
+      : pick(YT_PAID_MSGS)(mention, month)
+    : shortcode.startsWith("B")
+      ? pick(YT_UNPAID_MSGS_ELDER)(mention, month)
+      : pick(YT_UNPAID_MSGS)(mention, month);
+  await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, msg);
+}
+
+async function notifyYtGroupBulk(
+  shortcode: string,
+  months: string[],
+  paid: boolean,
+): Promise<void> {
+  if (!YOUTUBE_GROUP_CHAT_ID || !months.length) return;
+  const handle = await getTelegramUsernameByShortcode(shortcode);
+  const mention = handle ? `@${handle}` : shortcode;
+  const monthList = months.join(", ");
+  const msg = paid
+    ? shortcode.startsWith("B")
+      ? pick(YT_PAID_MSGS_ELDER)(mention, monthList)
+      : pick(YT_PAID_MSGS)(mention, monthList)
+    : shortcode.startsWith("B")
+      ? pick(YT_UNPAID_MSGS_ELDER)(mention, monthList)
+      : pick(YT_UNPAID_MSGS)(mention, monthList);
+  await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, msg);
+}
+
 // Owner-only: /ytpaid <shortcode> <YYYY-MM> [YYYY-MM ...] — mark one or more YouTube months as paid
 bot.command("ytpaid", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -441,14 +478,7 @@ bot.command("ytpaid", async (ctx) => {
     await ctx.reply(
       `✅ ${result.shortcode} ${result.month.slice(0, 7)} marked as paid.`,
     );
-    if (YOUTUBE_GROUP_CHAT_ID) {
-      const handle = await getTelegramUsernameByShortcode(result.shortcode);
-      const mention = handle ? `@${handle}` : result.shortcode;
-      const paidMsg = result.shortcode.startsWith("B")
-        ? pick(YT_PAID_MSGS_ELDER)(mention, result.month.slice(0, 7))
-        : pick(YT_PAID_MSGS)(mention, result.month.slice(0, 7));
-      await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, paidMsg);
-    }
+    await notifyYtGroup(result.shortcode, result.month.slice(0, 7), true);
     return;
   }
 
@@ -459,9 +489,15 @@ bot.command("ytpaid", async (ctx) => {
       `No matching months found for ${shortcode.toUpperCase()}.`,
     );
   const updated = results.map((r) => r.month.slice(0, 7)).join(", ");
-  return ctx.reply(
+  await ctx.reply(
     `✅ Marked ${results.length} month(s) as paid for ${shortcode.toUpperCase()}:\n${updated}`,
   );
+  await notifyYtGroupBulk(
+    results[0].shortcode,
+    results.map((r) => r.month.slice(0, 7)),
+    true,
+  );
+  return;
 });
 
 // Owner-only: /ytunpaid <shortcode> <YYYY-MM> [YYYY-MM ...] — mark one or more YouTube months as unpaid
@@ -485,14 +521,7 @@ bot.command("ytunpaid", async (ctx) => {
     await ctx.reply(
       `⏳ ${result.shortcode} ${result.month.slice(0, 7)} marked as unpaid.`,
     );
-    if (YOUTUBE_GROUP_CHAT_ID) {
-      const handle = await getTelegramUsernameByShortcode(result.shortcode);
-      const mention = handle ? `@${handle}` : result.shortcode;
-      const unpaidMsg = result.shortcode.startsWith("B")
-        ? pick(YT_UNPAID_MSGS_ELDER)(mention, result.month.slice(0, 7))
-        : pick(YT_UNPAID_MSGS)(mention, result.month.slice(0, 7));
-      await bot.api.sendMessage(YOUTUBE_GROUP_CHAT_ID, unpaidMsg);
-    }
+    await notifyYtGroup(result.shortcode, result.month.slice(0, 7), false);
     return;
   }
 
@@ -503,9 +532,15 @@ bot.command("ytunpaid", async (ctx) => {
       `No matching months found for ${shortcode.toUpperCase()}.`,
     );
   const updated = results.map((r) => r.month.slice(0, 7)).join(", ");
-  return ctx.reply(
+  await ctx.reply(
     `⏳ Marked ${results.length} month(s) as unpaid for ${shortcode.toUpperCase()}:\n${updated}`,
   );
+  await notifyYtGroupBulk(
+    results[0].shortcode,
+    results.map((r) => r.month.slice(0, 7)),
+    false,
+  );
+  return;
 });
 
 // Owner-only: /ytpaidall <shortcode> — mark ALL YouTube months as paid
@@ -520,9 +555,15 @@ bot.command("ytpaidall", async (ctx) => {
   const results = await toggleAllYouTubeMonthsPaid(shortcode, true);
   if (!results.length)
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
-  return ctx.reply(
+  await ctx.reply(
     `✅ All ${results.length} month(s) for ${shortcode} marked as paid! 🎉`,
   );
+  await notifyYtGroupBulk(
+    results[0].shortcode,
+    results.map((r) => r.month.slice(0, 7)),
+    true,
+  );
+  return;
 });
 
 // Owner-only: /ytunpaidall <shortcode> — mark ALL YouTube months as unpaid
@@ -539,9 +580,15 @@ bot.command("ytunpaidall", async (ctx) => {
   const results = await toggleAllYouTubeMonthsPaid(shortcode, false);
   if (!results.length)
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
-  return ctx.reply(
+  await ctx.reply(
     `⏳ All ${results.length} month(s) for ${shortcode} marked as unpaid. Back to square one! 😈`,
   );
+  await notifyYtGroupBulk(
+    results[0].shortcode,
+    results.map((r) => r.month.slice(0, 7)),
+    false,
+  );
+  return;
 });
 
 // Owner-only: /allowe — summary of everyone who owes anything
@@ -707,15 +754,15 @@ bot.command("help", async (ctx) => {
       "\n" +
       "📺 YouTube subscription:\n" +
       "  /ytpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\n" +
-      "    → Mark one or more months as paid (notifies group for single)\n" +
+      "    → Mark one or more months as paid (1 group notification)\n" +
       "    → e.g. /ytpaid PVS 2026-04\n" +
       "    → e.g. /ytpaid PVS 2026-01 2026-02 2026-03\n" +
       "  /ytunpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\n" +
-      "    → Mark one or more months as unpaid\n" +
+      "    → Mark one or more months as unpaid (1 group notification)\n" +
       "  /ytpaidall <shortcode>\n" +
-      "    → Mark ALL months as paid\n" +
+      "    → Mark ALL months as paid (1 group notification)\n" +
       "  /ytunpaidall <shortcode>\n" +
-      "    → Mark ALL months as unpaid\n" +
+      "    → Mark ALL months as unpaid (1 group notification)\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +
