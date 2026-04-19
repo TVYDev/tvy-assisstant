@@ -220,6 +220,42 @@ export async function markYouTubePaid(shortcode: string): Promise<void> {
   if (error) throw new Error(`Failed to mark YouTube paid: ${error.message}`);
 }
 
+export async function bulkToggleYouTubeMonthsPaid(
+  shortcode: string,
+  months: string[], // YYYY-MM[]
+  paid: boolean,
+): Promise<SubscriptionMonth[]> {
+  const normalized = shortcode.toUpperCase();
+  const monthDates = months.map((m) => `${m}-01`);
+
+  const { data, error } = await supabase
+    .from("youtube_subscription_months")
+    .update({ paid })
+    .eq("shortcode", normalized)
+    .in("month", monthDates)
+    .select("id, shortcode, month, paid");
+
+  if (error) throw new Error(`Failed to bulk toggle months: ${error.message}`);
+  return (data ?? []) as SubscriptionMonth[];
+}
+
+export async function toggleAllYouTubeMonthsPaid(
+  shortcode: string,
+  paid: boolean,
+): Promise<SubscriptionMonth[]> {
+  const normalized = shortcode.toUpperCase();
+
+  const { data, error } = await supabase
+    .from("youtube_subscription_months")
+    .update({ paid })
+    .eq("shortcode", normalized)
+    .select("id, shortcode, month, paid");
+
+  if (error)
+    throw new Error(`Failed to toggle all months: ${error.message}`);
+  return (data ?? []) as SubscriptionMonth[];
+}
+
 export async function insertCurrentMonthForAll(): Promise<void> {
   const { error } = await supabase.rpc("insert_youtube_months_current");
   if (error)
