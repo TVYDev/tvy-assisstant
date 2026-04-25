@@ -98,10 +98,12 @@ export async function buildOweMessage(
     username;
   const lines: string[] = [pick(GREETINGS)(name, username), ""];
 
+  const unpaidItems = record?.items.filter((item) => !item.paid) ?? [];
+
   if (record && record.owes_me > 0) {
     lines.push(`😬 You owe Vannyou: $${record.owes_me.toFixed(2)}`);
     lines.push("  What for:");
-    for (const item of record.items) {
+    for (const item of unpaidItems) {
       lines.push(
         `  • ${item.description} — $${item.amount.toFixed(2)} (${item.date})`,
       );

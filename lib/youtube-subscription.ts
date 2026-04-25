@@ -35,7 +35,7 @@ export async function upsertTelegramUser(user: TelegramUser): Promise<void> {
 
 export async function updateTelegramUserField(
   shortcode: string,
-  field: "first_name" | "last_name" | "shortcode",
+  field: "first_name" | "last_name" | "shortcode" | "telegram_username",
   value: string,
 ): Promise<boolean> {
   const code = shortcode.toUpperCase();
@@ -148,7 +148,7 @@ export async function getMemberByUsername(
   return getMemberByShortcode(user.shortcode);
 }
 
-async function getMemberByShortcode(
+export async function getMemberByShortcode(
   shortcode: string,
 ): Promise<SubscriptionMember | null> {
   const { data, error } = await supabase

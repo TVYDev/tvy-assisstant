@@ -6,6 +6,7 @@ import {
   upsertTelegramUser,
   markYouTubePaid,
   getYouTubeMonthsForShortcode,
+  getMemberByShortcode,
   toggleYouTubeMonthPaid,
   bulkToggleYouTubeMonthsPaid,
   toggleAllYouTubeMonthsPaid,
@@ -274,11 +275,16 @@ bot.command("debts", async (ctx) => {
   if (!shortcode)
     return ctx.reply("Usage: /debts <shortcode>\nExample: /debts BSR");
 
-  const [record, ytMonths, monthlyFee] = await Promise.all([
+  const [record, ytMember, monthlyFee] = await Promise.all([
     getDebtByShortcode(shortcode),
-    getYouTubeMonthsForShortcode(shortcode),
+    getMemberByShortcode(shortcode),
     getConfig("youtube_monthly_fee").then(parseFloat),
   ]);
+
+  // Only fetch YouTube months if they're actually a subscription member
+  const ytMonths = ytMember
+    ? await getYouTubeMonthsForShortcode(shortcode)
+    : [];
 
   const lines: string[] = [
     `📋 Debts for ${shortcode}${record ? ` (${record.name})` : ""}`,
@@ -300,16 +306,17 @@ bot.command("debts", async (ctx) => {
     lines.push("💸 No general debts.");
   }
 
-  if (ytMonths.length > 0) {
+  const unpaidYtMonths = ytMonths.filter((m) => !m.paid);
+  if (ytMember) {
     lines.push("");
-    lines.push("📺 YouTube months:");
-    for (const m of ytMonths) {
-      const status = m.paid ? "✅" : "⏳";
-      lines.push(`  ${status} ${m.month.slice(0, 7)}`);
+    if (unpaidYtMonths.length > 0) {
+      lines.push("📺 YouTube months (unpaid):");
+      for (const m of unpaidYtMonths) {
+        lines.push(`  ⏳ ${m.month.slice(0, 7)}`);
+      }
+    } else {
+      lines.push("📺 YouTube: all paid up! ✅");
     }
-  } else {
-    lines.push("");
-    lines.push("📺 No YouTube months recorded.");
   }
 
   const unpaidDebt = record
@@ -638,6 +645,7 @@ bot.command("allowe", async (ctx) => {
     if (unpaidDebt > 0) lines.push(`  💸 General: $${unpaidDebt.toFixed(2)}`);
     if (ytUnpaid > 0)
       lines.push(`  📺 YouTube: ${ytUnpaid} month(s) = $${ytTotal.toFixed(2)}`);
+    lines.push("");
   }
 
   if (lines.length === 2) {
@@ -651,7 +659,7 @@ bot.command("allowe", async (ctx) => {
 });
 
 // Owner-only: /updateuser <shortcode> <field> <value>
-// field: first_name | last_name | shortcode
+// field: first_name | last_name | shortcode | telegram_username
 // Example: /updateuser BSR first_name Sophia
 bot.command("updateuser", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -659,20 +667,20 @@ bot.command("updateuser", async (ctx) => {
   }
 
   const args = (ctx.match?.trim() ?? "").match(
-    /^(\S+)\s+(first_name|last_name|shortcode)\s+(.+)$/,
+    /^(\S+)\s+(first_name|last_name|shortcode|telegram_username)\s+(.+)$/,
   );
   if (!args) {
     return ctx.reply(
       "Usage: /updateuser <shortcode> <field> <value>\n" +
-        "Fields: first_name | last_name | shortcode\n" +
-        "Example: /updateuser BSR first_name Sophia",
+        "Fields: first_name | last_name | shortcode | telegram_username\n" +
+        "Example: /updateuser BSR telegram_username johndoe",
     );
   }
 
   const [, shortcode, field, value] = args as [
     string,
     string,
-    "first_name" | "last_name" | "shortcode",
+    "first_name" | "last_name" | "shortcode" | "telegram_username",
     string,
   ];
 
@@ -768,8 +776,9 @@ bot.command("help", async (ctx) => {
       "  /listusers\n" +
       "    → List all telegram users in DB\n" +
       "  /updateuser <shortcode> <field> <value>\n" +
-      "    → Update first_name | last_name | shortcode\n" +
+      "    → Update first_name | last_name | shortcode | telegram_username\n" +
       "    → e.g. /updateuser BSR first_name Sophia\n" +
+      "    → e.g. /updateuser BSR telegram_username johndoe\n" +
       "    → Shortcode change cascades all records",
   );
 });
