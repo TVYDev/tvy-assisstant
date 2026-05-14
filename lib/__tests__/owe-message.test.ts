@@ -65,25 +65,32 @@ beforeEach(() => {
 
 describe("buildOweMessage", () => {
   it("returns null when no debt record and no subscription member", async () => {
-    mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(result).toBeNull();
   });
 
-  it("includes debt amount when user owes money", async () => {
+  it("includes debt amount when user owes money (username miss, userId hit)", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(debtRecord());
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
 
     const result = await buildOweMessage(123, "user", "User");
+    expect(mockGetDebtByUsername).toHaveBeenCalledWith("user");
+    expect(mockGetDebtByUserId).toHaveBeenCalledWith(123);
     expect(result).toContain("$25.00");
     expect(result).toContain("Lunch");
   });
 
-  it("includes YouTube unpaid info", async () => {
+  it("includes YouTube unpaid info (username miss, userId hit)", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(3));
 
     const result = await buildOweMessage(123, "user", "User");
@@ -91,10 +98,24 @@ describe("buildOweMessage", () => {
     expect(result).toContain("$5.00");
   });
 
+  it("includes YouTube when username matches stub (no userId lookup for member)", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
+    mockGetMemberByUsername.mockResolvedValue(ytMember(3));
+
+    const result = await buildOweMessage(123, "user", "User");
+    expect(mockGetMemberByUsername).toHaveBeenCalledWith("user");
+    expect(mockGetMemberByTelegramIdentity).not.toHaveBeenCalled();
+    expect(result).toContain("3 month(s)");
+    expect(result).toContain("$15.00");
+  });
+
   it("shows net total correctly when both debt and YouTube owed", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(
       debtRecord({ owes_me: 10, i_owe: 0 }),
     );
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2)); // 2 × $5 = $10
 
     const result = await buildOweMessage(123, "user", "User");
@@ -102,10 +123,40 @@ describe("buildOweMessage", () => {
     expect(result).toContain("$20.00");
   });
 
+  it("includes YouTube when debt and member both resolve via username", async () => {
+    mockGetDebtByUsername.mockResolvedValue(
+      debtRecord({ owes_me: 10, i_owe: 0 }),
+    );
+    mockGetMemberByUsername.mockResolvedValue(ytMember(2));
+
+    const result = await buildOweMessage(123, "user", "User");
+    expect(mockGetDebtByUserId).not.toHaveBeenCalled();
+    expect(mockGetMemberByTelegramIdentity).not.toHaveBeenCalled();
+    expect(result).toContain("$20.00");
+    expect(result).toContain("2 month(s)");
+  });
+
+  it("prefers debt from username when both username and userId would match", async () => {
+    mockGetDebtByUsername.mockResolvedValue(
+      debtRecord({ shortcode: "USR", name: "FromStub", owes_me: 1, i_owe: 0 }),
+    );
+    mockGetDebtByUserId.mockResolvedValue(debtRecord({ owes_me: 99, i_owe: 0 }));
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
+    mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
+
+    const result = await buildOweMessage(123, "user", "User");
+    expect(mockGetDebtByUserId).not.toHaveBeenCalled();
+    expect(result).toContain("FromStub");
+    expect(result).toContain("$1.00");
+    expect(result).not.toContain("$99.00");
+  });
+
   it("shows 'Vannyou owes you' message when i_owe > 0", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(
       debtRecord({ owes_me: 0, i_owe: 15, items: [] }),
     );
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
 
     const result = await buildOweMessage(123, "user", "User");
@@ -115,9 +166,11 @@ describe("buildOweMessage", () => {
   });
 
   it("shows all-settled message when net is zero", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(
       debtRecord({ owes_me: 0, i_owe: 0, items: [] }),
     );
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(0));
 
     const result = await buildOweMessage(123, "user", "User");
@@ -126,21 +179,26 @@ describe("buildOweMessage", () => {
     expect(result).toMatch(/clean|settled|zero|nothing/i);
   });
 
-  it("falls back to getDebtByUsername when userId is 0", async () => {
+  it("uses username only when userId is 0", async () => {
     mockGetDebtByUsername.mockResolvedValue(debtRecord());
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
 
     const result = await buildOweMessage(0, "user", "User");
     expect(mockGetDebtByUsername).toHaveBeenCalledWith("user");
+    expect(mockGetDebtByUserId).not.toHaveBeenCalled();
+    expect(mockGetMemberByTelegramIdentity).not.toHaveBeenCalled();
     expect(result).toContain("$25.00");
   });
 
-  it("returns null when both lookups return null and no member", async () => {
+  it("uses userId only when username is empty", async () => {
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
-    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
 
     const result = await buildOweMessage(123, "", "Friend");
+    expect(mockGetDebtByUsername).not.toHaveBeenCalled();
+    expect(mockGetMemberByUsername).not.toHaveBeenCalled();
+    expect(mockGetDebtByUserId).toHaveBeenCalledWith(123);
+    expect(mockGetMemberByTelegramIdentity).toHaveBeenCalledWith(123);
     expect(result).toBeNull();
   });
 });

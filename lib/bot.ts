@@ -15,9 +15,12 @@ import {
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
   getAllTelegramUsers,
-  getMemberByTelegramIdentity,
 } from "./youtube-subscription";
-import { buildOweMessage } from "./owe-message";
+import {
+  buildOweMessage,
+  resolveDebtForTelegramUser,
+  resolveSubscriptionMemberForTelegramUser,
+} from "./owe-message";
 import {
   addDebt,
   getDebtByShortcode,
@@ -26,7 +29,6 @@ import {
   toggleDebtItemPaid,
   updateDebtItem,
   getAllDebtRecords,
-  getDebtByUserId,
 } from "./debt";
 
 const token = process.env.BOT_TOKEN;
@@ -196,8 +198,8 @@ bot.command("qr", async (ctx) => {
   const firstName = ctx.from?.first_name ?? "friend";
 
   const [record, member, monthlyFee] = await Promise.all([
-    userId ? getDebtByUserId(userId) : Promise.resolve(null),
-    userId ? getMemberByTelegramIdentity(userId) : Promise.resolve(null),
+    resolveDebtForTelegramUser(userId, username),
+    resolveSubscriptionMemberForTelegramUser(userId, username),
     getConfig("youtube_monthly_fee").then(parseFloat),
   ]);
 
@@ -291,19 +293,23 @@ bot.command("debts", async (ctx) => {
     "",
   ];
 
-  if (record && record.items.length > 0) {
-    const unpaidTotal = record.items
-      .filter((i) => !i.paid)
-      .reduce((s, i) => s + i.amount, 0);
-    lines.push(`💸 General debts ($${unpaidTotal.toFixed(2)} unpaid):`);
-    for (const item of record.items) {
-      const status = item.paid ? "✅" : "⏳";
+  const unpaidDebtItems = record
+    ? record.items.filter((i) => !i.paid)
+    : [];
+  if (unpaidDebtItems.length > 0) {
+    const unpaidTotal = unpaidDebtItems.reduce((s, i) => s + i.amount, 0);
+    lines.push(`💸 Unpaid general debts ($${unpaidTotal.toFixed(2)}):`);
+    for (const item of unpaidDebtItems) {
       lines.push(
-        `  ${status} #${item.id} ${item.description} — $${item.amount.toFixed(2)} (${item.date})`,
+        `  ⏳ #${item.id} ${item.description} — $${item.amount.toFixed(2)} (${item.date})`,
       );
     }
   } else {
-    lines.push("💸 No general debts.");
+    lines.push(
+      record && record.items.length > 0
+        ? "💸 No unpaid general debts."
+        : "💸 No general debts.",
+    );
   }
 
   const unpaidYtMonths = ytMonths.filter((m) => !m.paid);
@@ -659,7 +665,7 @@ bot.command("allowe", async (ctx) => {
 });
 
 // Owner-only: /updateuser <shortcode> <field> <value>
-// field: first_name | last_name | shortcode | telegram_username
+// field: first_name | last_name | shortcode | telegram_username | telegram_user_id
 // Example: /updateuser BSR first_name Sophia
 bot.command("updateuser", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -667,33 +673,52 @@ bot.command("updateuser", async (ctx) => {
   }
 
   const args = (ctx.match?.trim() ?? "").match(
-    /^(\S+)\s+(first_name|last_name|shortcode|telegram_username)\s+(.+)$/,
+    /^(\S+)\s+(first_name|last_name|shortcode|telegram_username|telegram_user_id)\s+(.+)$/,
   );
   if (!args) {
     return ctx.reply(
       "Usage: /updateuser <shortcode> <field> <value>\n" +
-        "Fields: first_name | last_name | shortcode | telegram_username\n" +
-        "Example: /updateuser BSR telegram_username johndoe",
+        "Fields: first_name | last_name | shortcode | telegram_username | telegram_user_id\n" +
+        "telegram_user_id: positive integer, or null/none/clear to unlink\n" +
+        "Example: /updateuser BSR telegram_username johndoe\n" +
+        "Example: /updateuser BSR telegram_user_id 123456789",
     );
   }
 
   const [, shortcode, field, value] = args as [
     string,
     string,
-    "first_name" | "last_name" | "shortcode" | "telegram_username",
+    | "first_name"
+    | "last_name"
+    | "shortcode"
+    | "telegram_username"
+    | "telegram_user_id",
     string,
   ];
 
-  await updateTelegramUserField(shortcode, field, value);
+  try {
+    await updateTelegramUserField(shortcode, field, value);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return ctx.reply(`❌ Update failed: ${msg}`);
+  }
 
+  const code = shortcode.toUpperCase();
   if (field === "shortcode") {
     return ctx.reply(
-      `✅ Shortcode updated: ${shortcode.toUpperCase()} → ${value.toUpperCase()}\nAll related records cascade-updated! 🔄`,
+      `✅ Shortcode updated: ${code} → ${value.toUpperCase()}\nAll related records cascade-updated! 🔄`,
     );
   }
-  return ctx.reply(
-    `✅ Updated ${field} for ${shortcode.toUpperCase()} to "${value}".`,
-  );
+  if (field === "telegram_user_id") {
+    const lowered = value.trim().toLowerCase();
+    const cleared = ["", "null", "none", "clear"].includes(lowered);
+    return ctx.reply(
+      cleared
+        ? `✅ Cleared telegram_user_id for ${code}.`
+        : `✅ Updated telegram_user_id for ${code} to ${parseInt(value.trim(), 10)}.`,
+    );
+  }
+  return ctx.reply(`✅ Updated ${field} for ${code} to "${value}".`);
 });
 
 // Owner-only: /listusers — show all telegram_users
@@ -748,7 +773,7 @@ bot.command("help", async (ctx) => {
       "    → Correct an existing debt item\n" +
       "    → e.g. /updatedebt 12 20.00 Dinner\n" +
       "  /debts <shortcode>\n" +
-      "    → View all debts + YouTube for someone\n" +
+      "    → View unpaid debts + YouTube for someone\n" +
       "  /allowe\n" +
       "    → Summary of everyone who owes\n" +
       "  /paid <shortcode>\n" +
@@ -776,9 +801,11 @@ bot.command("help", async (ctx) => {
       "  /listusers\n" +
       "    → List all telegram users in DB\n" +
       "  /updateuser <shortcode> <field> <value>\n" +
-      "    → Update first_name | last_name | shortcode | telegram_username\n" +
+      "    → first_name | last_name | shortcode | telegram_username | telegram_user_id\n" +
+      "    → telegram_user_id: numeric Telegram id, or null/none/clear to unlink\n" +
       "    → e.g. /updateuser BSR first_name Sophia\n" +
       "    → e.g. /updateuser BSR telegram_username johndoe\n" +
+      "    → e.g. /updateuser BSR telegram_user_id 123456789\n" +
       "    → Shortcode change cascades all records",
   );
 });

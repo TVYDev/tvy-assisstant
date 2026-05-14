@@ -35,7 +35,12 @@ export async function upsertTelegramUser(user: TelegramUser): Promise<void> {
 
 export async function updateTelegramUserField(
   shortcode: string,
-  field: "first_name" | "last_name" | "shortcode" | "telegram_username",
+  field:
+    | "first_name"
+    | "last_name"
+    | "shortcode"
+    | "telegram_username"
+    | "telegram_user_id",
   value: string,
 ): Promise<boolean> {
   const code = shortcode.toUpperCase();
@@ -62,6 +67,26 @@ export async function updateTelegramUserField(
       .update({ shortcode: newCode })
       .eq("shortcode", code);
     if (error) throw new Error(`Failed to update shortcode: ${error.message}`);
+  } else if (field === "telegram_user_id") {
+    const trimmed = value.trim();
+    const lowered = trimmed.toLowerCase();
+    const clearTokens = ["", "null", "none", "clear"];
+    const newId = clearTokens.includes(lowered)
+      ? null
+      : (() => {
+          const n = parseInt(trimmed, 10);
+          if (Number.isNaN(n) || n <= 0) {
+            throw new Error(
+              "telegram_user_id must be a positive integer (Telegram numeric id), or one of: null, none, clear",
+            );
+          }
+          return n;
+        })();
+    const { error } = await supabase
+      .from("telegram_users")
+      .update({ telegram_user_id: newId })
+      .eq("shortcode", code);
+    if (error) throw new Error(`Failed to update ${field}: ${error.message}`);
   } else {
     const { error } = await supabase
       .from("telegram_users")

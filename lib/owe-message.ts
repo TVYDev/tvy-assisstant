@@ -1,9 +1,43 @@
+import type { DebtRecord } from "./debt";
 import { getDebtByUsername, getDebtByUserId } from "./debt";
+import type { SubscriptionMember } from "./youtube-subscription";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
   getConfig,
 } from "./youtube-subscription";
+
+/** Resolve ledger debt: stub row by Telegram username first, then linked row by user id. */
+export async function resolveDebtForTelegramUser(
+  userId: number,
+  username: string,
+): Promise<DebtRecord | null> {
+  const handle = username.trim();
+  if (handle) {
+    const byUsername = await getDebtByUsername(handle);
+    if (byUsername) return byUsername;
+  }
+  if (userId) {
+    return getDebtByUserId(userId);
+  }
+  return null;
+}
+
+/** Resolve YouTube subscription member: same username-first, then Telegram user id. */
+export async function resolveSubscriptionMemberForTelegramUser(
+  userId: number,
+  username: string,
+): Promise<SubscriptionMember | null> {
+  const handle = username.trim();
+  if (handle) {
+    const byUsername = await getMemberByUsername(handle);
+    if (byUsername) return byUsername;
+  }
+  if (userId) {
+    return getMemberByTelegramIdentity(userId);
+  }
+  return null;
+}
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -67,24 +101,9 @@ export async function buildOweMessage(
   username: string,
   firstName: string,
 ): Promise<string | null> {
-  // Prefer userId lookup (works even without a username)
-  const debtPromise = userId
-    ? getDebtByUserId(userId).then(
-        (r) => r ?? (username ? getDebtByUsername(username) : null),
-      )
-    : username
-      ? getDebtByUsername(username)
-      : Promise.resolve(null);
-
-  const memberPromise = userId
-    ? getMemberByTelegramIdentity(userId)
-    : username
-      ? getMemberByUsername(username)
-      : Promise.resolve(null);
-
   const [record, subscriptionMember, monthlyFee] = await Promise.all([
-    debtPromise,
-    memberPromise,
+    resolveDebtForTelegramUser(userId, username),
+    resolveSubscriptionMemberForTelegramUser(userId, username),
     getConfig("youtube_monthly_fee").then(parseFloat),
   ]);
 
