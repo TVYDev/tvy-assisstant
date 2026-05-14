@@ -14,14 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 10+ expects Node 22+ (node:sqlite, etc.); avoid `latest` pnpm on Node 20.
       - uses: pnpm/action-setup@v4
         with:
-          version: latest
+          version: 10
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
