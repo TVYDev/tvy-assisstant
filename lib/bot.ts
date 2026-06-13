@@ -6,7 +6,6 @@ import {
   upsertTelegramUser,
   markYouTubePaid,
   getYouTubeMonthsForShortcode,
-  getMemberByShortcode,
   toggleYouTubeMonthPaid,
   bulkToggleYouTubeMonthsPaid,
   toggleAllYouTubeMonthsPaid,
@@ -15,7 +14,6 @@ import {
 } from "./youtube-subscription";
 import {
   buildOweMessage,
-  buildOweMessageForShortcode,
   calculateNetOwed,
   resolveDebtForTelegramUser,
   resolveSubscriptionMemberForTelegramUser,
@@ -32,17 +30,12 @@ import {
   addDeposit,
   reduceDeposit,
   InsufficientDepositError,
-  getDepositBalanceByShortcode,
-  getDepositTransactions,
   resolveDepositForTelegramUser,
 } from "./deposit";
 import {
   getUnpaidYoutubeOwing,
-  getYoutubeFeeSchedules,
   addYoutubeFeeSchedule,
   formatFeeScheduleLine,
-  resolveFeeForMonth,
-  sumMonthCharges,
   isDateToken,
 } from "./youtube-fee";
 import {
@@ -56,6 +49,9 @@ import {
   buildListUsersReply,
   buildYtFeesReply,
   sendYtReminderPreview,
+  buildDebtsReply,
+  buildDepositsReply,
+  buildPreviewOweReply,
 } from "./owner-replies";
 import {
   registerBotCommands,
@@ -74,6 +70,11 @@ import {
   OWNER_MENU_PREVIEW_TEXT,
   OWNER_MENU_HELP_TEXT,
 } from "./owner-menu";
+import {
+  parseShortcodeFromMatch,
+  promptShortcodePick,
+  parseShortcodeCallbackData,
+} from "./shortcode-prompt";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
@@ -466,53 +467,12 @@ bot.command("deposits", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const shortcode = ctx.match?.trim().toUpperCase();
+  const shortcode = parseShortcodeFromMatch(ctx.match);
   if (!shortcode) {
-    return ctx.reply("Usage: /deposits <shortcode>\nExample: /deposits BSR");
+    return promptShortcodePick(ctx, "deposits");
   }
 
-  const [balance, transactions] = await Promise.all([
-    getDepositBalanceByShortcode(shortcode),
-    getDepositTransactions(shortcode),
-  ]);
-
-  const lines: string[] = [
-    `💰 Deposits for ${shortcode}`,
-    `Current balance: $${balance.toFixed(2)}`,
-    "",
-  ];
-
-  const reductions = transactions.filter((t) => t.type === "reduce");
-  if (reductions.length > 0) {
-    lines.push("📉 Reduction history:");
-    for (const tx of reductions) {
-      const date = tx.created_at.slice(0, 10);
-      const note = tx.note ? ` — ${tx.note}` : "";
-      lines.push(
-        `  • -$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} left${note}`,
-      );
-    }
-    lines.push("");
-  } else {
-    lines.push("📉 No reductions yet.");
-    lines.push("");
-  }
-
-  const additions = transactions.filter((t) => t.type === "add");
-  if (additions.length > 0) {
-    lines.push("📈 Add history:");
-    for (const tx of additions) {
-      const date = tx.created_at.slice(0, 10);
-      const note = tx.note ? ` — ${tx.note}` : "";
-      lines.push(
-        `  • +$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} total${note}`,
-      );
-    }
-  } else {
-    lines.push("📈 No deposits added yet.");
-  }
-
-  return ctx.reply(lines.join("\n"));
+  return ctx.reply(await buildDepositsReply(shortcode));
 });
 
 // Owner-only: /debts <shortcode>
@@ -521,80 +481,12 @@ bot.command("debts", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const shortcode = ctx.match?.trim().toUpperCase();
-  if (!shortcode)
-    return ctx.reply("Usage: /debts <shortcode>\nExample: /debts BSR");
-
-  const [record, ytMember, deposit, schedules] = await Promise.all([
-    getDebtByShortcode(shortcode),
-    getMemberByShortcode(shortcode),
-    getDepositBalanceByShortcode(shortcode),
-    getYoutubeFeeSchedules(),
-  ]);
-
-  const ytMonths = ytMember
-    ? await getYouTubeMonthsForShortcode(shortcode)
-    : [];
-  const unpaidYtMonths = ytMonths.filter((m) => !m.paid);
-  const unpaidYt = sumMonthCharges(unpaidYtMonths, schedules, false).total;
-
-  const lines: string[] = [
-    `📋 Debts for ${shortcode}${record ? ` (${record.name})` : ""}`,
-    "",
-  ];
-
-  const unpaidDebtItems = record
-    ? record.items.filter((i) => !i.paid)
-    : [];
-  if (unpaidDebtItems.length > 0) {
-    const unpaidTotal = unpaidDebtItems.reduce((s, i) => s + i.amount, 0);
-    lines.push(`💸 Unpaid general debts ($${unpaidTotal.toFixed(2)}):`);
-    for (const item of unpaidDebtItems) {
-      lines.push(
-        `  ⏳ #${item.id} ${item.description} — $${item.amount.toFixed(2)} (${item.date})`,
-      );
-    }
-  } else {
-    lines.push(
-      record && record.items.length > 0
-        ? "💸 No unpaid general debts."
-        : "💸 No general debts.",
-    );
+  const shortcode = parseShortcodeFromMatch(ctx.match);
+  if (!shortcode) {
+    return promptShortcodePick(ctx, "debts");
   }
 
-  if (ytMember) {
-    lines.push("");
-    if (unpaidYtMonths.length > 0) {
-      lines.push("📺 YouTube months (unpaid):");
-      for (const m of unpaidYtMonths) {
-        const fee = resolveFeeForMonth(schedules, m.month);
-        lines.push(`  ⏳ ${m.month.slice(0, 7)} — $${fee.toFixed(2)}`);
-      }
-    } else {
-      lines.push("📺 YouTube: all paid up! ✅");
-    }
-  }
-
-  const unpaidDebt = record
-    ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
-    : 0;
-  const grossTotal = unpaidDebt + unpaidYt;
-  const netTotal = calculateNetOwed({
-    owes_me: unpaidDebt,
-    i_owe: 0,
-    deposit,
-    subOwed: unpaidYt,
-  });
-  lines.push("");
-  if (deposit > 0) {
-    lines.push(`💰 Deposit on file: $${deposit.toFixed(2)}`);
-  }
-  lines.push(`💰 Total owed: $${grossTotal.toFixed(2)}`);
-  if (deposit > 0) {
-    lines.push(`💰 Net owed (after deposit): $${netTotal.toFixed(2)}`);
-  }
-
-  return ctx.reply(lines.join("\n"));
+  return ctx.reply(await buildDebtsReply(shortcode));
 });
 
 // Owner-only: /paid <shortcode> — clear all debts + YouTube subscription
@@ -603,18 +495,21 @@ bot.command("paid", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
-  if (parts.length < 1) {
-    return ctx.reply(
-      "Usage: /paid <shortcode> [amount|deposit]\n" +
-        "  /paid BSR — clear all, deposit unchanged\n" +
-        "  /paid BSR 50 — record $50 received, then clear all\n" +
-        "  /paid BSR deposit — clear all using deposit only",
-    );
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return promptShortcodePick(ctx, "paid");
   }
 
   const shortcode = parts[0].toUpperCase();
-  const { tail } = parsePaymentTail(parts.slice(1));
+  return runPaid(ctx, shortcode, parts.slice(1));
+});
+
+async function runPaid(
+  ctx: { reply: (msg: string) => unknown },
+  shortcode: string,
+  tailParts: string[] = [],
+): Promise<unknown> {
+  const { tail } = parsePaymentTail(tailParts);
 
   const [record, ytOwing] = await Promise.all([
     getDebtByShortcode(shortcode),
@@ -643,7 +538,7 @@ bot.command("paid", async (ctx) => {
       `🧹 All wiped for ${shortcode}, but deposit step failed: ${(err as Error).message}`,
     );
   }
-});
+}
 
 // Owner-only: /updatedebt <item_id> <new_amount> <new_description> — correct a debt entry
 bot.command("updatedebt", async (ctx) => {
@@ -939,22 +834,23 @@ bot.command("ytpaidall", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
-  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
-  if (parts.length < 1) {
-    return ctx.reply(
-      "Usage: /ytpaidall <shortcode> [amount|deposit]\n" +
-        "  /ytpaidall BSR — mark all paid, deposit unchanged\n" +
-        "  /ytpaidall BSR 10 — record $10 received, then settle all months\n" +
-        "  /ytpaidall BSR deposit — settle all from deposit only",
-    );
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return promptShortcodePick(ctx, "ytpaidall");
   }
 
   const shortcode = parts[0].toUpperCase();
-  const { tail } = parsePaymentTail(parts.slice(1));
+  return runYtpaidall(ctx, shortcode, parts.slice(1));
+});
 
-  const [ytOwing] = await Promise.all([
-    getUnpaidYoutubeOwing(shortcode),
-  ]);
+async function runYtpaidall(
+  ctx: { reply: (msg: string) => unknown },
+  shortcode: string,
+  tailParts: string[] = [],
+): Promise<unknown> {
+  const { tail } = parsePaymentTail(tailParts);
+
+  const [ytOwing] = await Promise.all([getUnpaidYoutubeOwing(shortcode)]);
 
   if (ytOwing.months.length === 0) {
     const allMonths = await getYouTubeMonthsForShortcode(shortcode);
@@ -992,19 +888,25 @@ bot.command("ytpaidall", async (ctx) => {
     true,
   );
   return;
-});
+}
 
 // Owner-only: /ytunpaidall <shortcode> — mark ALL YouTube months as unpaid
 bot.command("ytunpaidall", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
-  const shortcode = ctx.match?.trim().toUpperCase();
-  if (!shortcode)
-    return ctx.reply(
-      "Usage: /ytunpaidall <shortcode>\nExample: /ytunpaidall PVS",
-    );
+  const shortcode = parseShortcodeFromMatch(ctx.match);
+  if (!shortcode) {
+    return promptShortcodePick(ctx, "ytunpaidall");
+  }
 
+  return runYtunpaidall(ctx, shortcode);
+});
+
+async function runYtunpaidall(
+  ctx: { reply: (msg: string) => unknown },
+  shortcode: string,
+): Promise<unknown> {
   const allMonths = await getYouTubeMonthsForShortcode(shortcode);
   if (!allMonths.length) {
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
@@ -1015,8 +917,9 @@ bot.command("ytunpaidall", async (ctx) => {
   }
 
   const results = await toggleAllYouTubeMonthsPaid(shortcode, false);
-  if (!results.length)
+  if (!results.length) {
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
+  }
   await ctx.reply(
     `⏳ ${results.length} paid month(s) for ${shortcode} marked as unpaid. Back to square one! 😈`,
   );
@@ -1026,7 +929,7 @@ bot.command("ytunpaidall", async (ctx) => {
     false,
   );
   return;
-});
+}
 
 // Owner-only: /ytfees — list YouTube fee schedules
 bot.command("ytfees", async (ctx) => {
@@ -1122,6 +1025,15 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     case "om:help":
       await editSection(OWNER_MENU_HELP_TEXT, ownerBackMenuKeyboard());
       break;
+    case "om:pick:debts":
+      await promptShortcodePick(ctx, "debts");
+      break;
+    case "om:pick:deposits":
+      await promptShortcodePick(ctx, "deposits");
+      break;
+    case "om:pick:previewowe":
+      await promptShortcodePick(ctx, "previewowe");
+      break;
     case "om:run:allowe":
       await ctx.reply(await buildAlloweSummary());
       break;
@@ -1137,27 +1049,66 @@ bot.callbackQuery(/^om:/, async (ctx) => {
   }
 });
 
+bot.callbackQuery(/^sc:/, async (ctx) => {
+  if (!isOwner(ctx)) {
+    await ctx.answerCallbackQuery({ text: "Boss only!", show_alert: true });
+    return;
+  }
+
+  const parsed = parseShortcodeCallbackData(ctx.callbackQuery.data);
+  if (!parsed) {
+    await ctx.answerCallbackQuery({ text: "Unknown action", show_alert: true });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  const { action, shortcode } = parsed;
+
+  switch (action) {
+    case "debts":
+      await ctx.reply(await buildDebtsReply(shortcode));
+      break;
+    case "deposits":
+      await ctx.reply(await buildDepositsReply(shortcode));
+      break;
+    case "previewowe": {
+      const message = await buildPreviewOweReply(shortcode);
+      await ctx.reply(
+        message ?? `No records found for ${shortcode}.`,
+      );
+      break;
+    }
+    case "paid":
+      await runPaid(ctx, shortcode);
+      break;
+    case "ytpaidall":
+      await runYtpaidall(ctx, shortcode);
+      break;
+    case "ytunpaidall":
+      await runYtunpaidall(ctx, shortcode);
+      break;
+    default:
+      await ctx.reply(`Unknown action: ${action}`);
+  }
+});
+
 // Owner-only: /previewowe <shortcode> — preview /owe for a user by shortcode
 bot.command("previewowe", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
 
-  const shortcode = ctx.match?.trim().toUpperCase();
+  const shortcode = parseShortcodeFromMatch(ctx.match);
   if (!shortcode) {
-    return ctx.reply(
-      "Usage: /previewowe <shortcode>\nExample: /previewowe BSR",
-    );
+    return promptShortcodePick(ctx, "previewowe");
   }
 
-  const message = await buildOweMessageForShortcode(shortcode);
+  const message = await buildPreviewOweReply(shortcode);
   if (!message) {
     return ctx.reply(`No records found for ${shortcode}.`);
   }
 
-  return ctx.reply(
-    `🔍 Preview — /owe for ${shortcode} (only you see this)\n\n${message}`,
-  );
+  return ctx.reply(message);
 });
 
 // Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat

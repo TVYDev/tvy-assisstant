@@ -84,6 +84,7 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
 export function ownerDebtMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("📊 All owe", "om:run:allowe")
+    .text("📋 Pick shortcode", "om:pick:debts")
     .row()
     .text("« Main menu", "om:main");
 }
