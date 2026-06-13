@@ -11,10 +11,15 @@ vi.mock("../debt", () => ({
   getDebtByUsername: vi.fn(),
 }));
 
+vi.mock("../youtube-fee", () => ({
+  getUnpaidYoutubeOwing: vi.fn(),
+  formatYoutubeMonthSummary: (owing: { months: unknown[]; total: number }) =>
+    `${owing.months.length} month(s) — $${owing.total.toFixed(2)}`,
+}));
+
 vi.mock("../youtube-subscription", () => ({
   getMemberByTelegramIdentity: vi.fn(),
   getMemberByUsername: vi.fn(),
-  getConfig: vi.fn(),
 }));
 
 vi.mock("../deposit", () => ({
@@ -26,19 +31,29 @@ import { getDebtByUserId, getDebtByUsername } from "../debt";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
-  getConfig,
 } from "../youtube-subscription";
+import { getUnpaidYoutubeOwing } from "../youtube-fee";
 const mockGetDebtByUserId = vi.mocked(getDebtByUserId);
 const mockGetDebtByUsername = vi.mocked(getDebtByUsername);
 const mockGetMemberByTelegramIdentity = vi.mocked(getMemberByTelegramIdentity);
 const mockGetMemberByUsername = vi.mocked(getMemberByUsername);
-const mockGetConfig = vi.mocked(getConfig);
+const mockGetUnpaidYoutubeOwing = vi.mocked(getUnpaidYoutubeOwing);
 
 // ── shared fixtures ───────────────────────────────────────────────────────────
 
 const NO_DEBT = null;
 const NO_MEMBER = null;
-const MONTHLY_FEE = "5.00";
+const MONTHLY_FEE = 5.0;
+
+function mockYoutubeOwing(months: number) {
+  mockGetUnpaidYoutubeOwing.mockResolvedValue({
+    total: months * MONTHLY_FEE,
+    months: Array.from({ length: months }, (_, i) => ({
+      month: `2026-0${i + 1}-01`,
+      fee: MONTHLY_FEE,
+    })),
+  });
+}
 
 function debtRecord(overrides = {}) {
   return {
@@ -65,7 +80,7 @@ function ytMember(unpaid_count = 2) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetConfig.mockResolvedValue(MONTHLY_FEE);
+  mockGetUnpaidYoutubeOwing.mockResolvedValue({ total: 0, months: [] });
   mockResolveDepositForTelegramUser.mockResolvedValue(0);
 });
 
@@ -100,16 +115,18 @@ describe("buildOweMessage", () => {
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(3));
+    mockYoutubeOwing(3);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(result).toContain("3 month(s)");
-    expect(result).toContain("$5.00");
+    expect(result).toContain("$15.00");
   });
 
   it("includes YouTube when username matches stub (no userId lookup for member)", async () => {
     mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetMemberByUsername.mockResolvedValue(ytMember(3));
+    mockYoutubeOwing(3);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(mockGetMemberByUsername).toHaveBeenCalledWith("user");
@@ -124,7 +141,8 @@ describe("buildOweMessage", () => {
       debtRecord({ owes_me: 10, i_owe: 0 }),
     );
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
-    mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2)); // 2 × $5 = $10
+    mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2));
+    mockYoutubeOwing(2);
 
     const result = await buildOweMessage(123, "user", "User");
     // net = 10 + 10 = 20
@@ -136,6 +154,7 @@ describe("buildOweMessage", () => {
       debtRecord({ owes_me: 10, i_owe: 0 }),
     );
     mockGetMemberByUsername.mockResolvedValue(ytMember(2));
+    mockYoutubeOwing(2);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(mockGetDebtByUserId).not.toHaveBeenCalled();

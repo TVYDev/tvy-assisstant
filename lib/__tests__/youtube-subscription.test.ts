@@ -4,61 +4,103 @@ vi.mock("../supabase", () => ({
   supabase: {},
 }));
 
+vi.mock("../youtube-fee", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../youtube-fee")>();
+  return actual;
+});
+
 import { buildReminderMessage } from "../youtube-subscription";
 
 describe("buildReminderMessage", () => {
-  const fee = 1.19;
-
-  it("renders one line per person with bold pay amount", () => {
-    const msg = buildReminderMessage([{ id: "EKV", unpaid_count: 1 }], fee);
-    expect(msg).not.toContain("<pre>");
-    expect(msg).toContain("<b>EKV</b>");
-    expect(msg).toContain("1 month");
-    expect(msg).toContain("To Pay <b>$1.19</b>");
-    expect(msg).not.toContain("Total to collect");
+  it("shows monthly fee when all unpaid months share one rate", () => {
+    const msg = buildReminderMessage([
+      {
+        id: "EKV",
+        months: [{ month: "2026-05-01", fee: 1.19 }],
+        total: 1.19,
+      },
+    ]);
+    expect(msg).toContain("1 month × $1.19");
+    expect(msg).toContain("<u>👉 To Pay $1.19</u>");
   });
 
-  it("shows deposit breakdown on a second line when deposit applies", () => {
+  it("shows per-month fees when rates differ", () => {
+    const msg = buildReminderMessage([
+      {
+        id: "TLH",
+        months: [
+          { month: "2026-05-01", fee: 1.19 },
+          { month: "2026-06-01", fee: 1.49 },
+        ],
+        total: 2.68,
+      },
+    ]);
+    expect(msg).toContain("2 months");
+    expect(msg).not.toContain("2 months ×");
+    expect(msg).toContain("1 month × $1.19");
+    expect(msg).toContain("1 month × $1.49");
+    expect(msg).not.toContain("2026-05");
+    expect(msg).toContain("<u>👉 To Pay $2.68</u>");
+  });
+
+  it("shows deposit breakdown with mixed monthly fees", () => {
     const msg = buildReminderMessage(
-      [{ id: "BSR", unpaid_count: 1 }],
-      fee,
-      new Map([["BSR", 0.71]]),
+      [
+        {
+          id: "BSR",
+          months: [
+            { month: "2026-05-01", fee: 1.19 },
+            { month: "2026-06-01", fee: 1.49 },
+          ],
+          total: 2.68,
+        },
+      ],
+      new Map([["BSR", 1.0]]),
     );
-    expect(msg).toContain("$0.71");
-    expect(msg).toContain("To Pay <b>$0.48</b>");
-    expect(msg).not.toContain("Total to collect");
+    expect(msg).toContain("<b>BSR</b>");
+    expect(msg).toContain("<b><u>👉 To Pay $1.68</u></b>");
+    expect(msg).toContain("1 month × $1.19");
+    expect(msg).toContain("1 month × $1.49");
+    expect(msg).toContain("deposit $1.00");
+    expect(msg).not.toContain("total");
   });
 
   it("shows Settled when deposit fully covers YouTube owed", () => {
     const msg = buildReminderMessage(
-      [{ id: "BSR", unpaid_count: 1 }],
-      fee,
-      new Map([["BSR", 2.0]]),
+      [
+        {
+          id: "ABC",
+          months: [{ month: "2026-06-01", fee: 1.49 }],
+          total: 1.49,
+        },
+      ],
+      new Map([["ABC", 2.0]]),
     );
-    expect(msg).toContain("✅");
     expect(msg).toContain("<b>Settled</b>");
-    expect(msg).not.toContain("Total to collect");
+    expect(msg).toContain("1 month × $1.49");
   });
 
-  it("sums net pay across multiple members with blank lines between", () => {
-    const msg = buildReminderMessage(
-      [
-        { id: "EKV", unpaid_count: 1 },
-        { id: "MKR", unpaid_count: 1 },
-        { id: "TLH", unpaid_count: 2 },
-      ],
-      fee,
-    );
-    expect(msg).toContain("EKV");
-    expect(msg).toContain("MKR");
-    expect(msg).toContain("2 months");
-    expect(msg).toContain("To Pay <b>$2.38</b>");
-    expect(msg).not.toContain("Total to collect");
-    expect(msg).toMatch(/MKR[\s\S]*\n\n[\s\S]*TLH/);
+  it("adds blank lines between members", () => {
+    const msg = buildReminderMessage([
+      {
+        id: "EKV",
+        months: [{ month: "2026-05-01", fee: 1.19 }],
+        total: 1.19,
+      },
+      {
+        id: "TLH",
+        months: [
+          { month: "2026-05-01", fee: 1.19 },
+          { month: "2026-06-01", fee: 1.49 },
+        ],
+        total: 2.68,
+      },
+    ]);
+    expect(msg).toMatch(/EKV[\s\S]*\n\n[\s\S]*TLH/);
   });
 
   it("returns all-paid message when nobody owes", () => {
-    const msg = buildReminderMessage([{ id: "BSR", unpaid_count: 0 }], fee);
+    const msg = buildReminderMessage([]);
     expect(msg).toContain("everyone's paid up");
   });
 });
