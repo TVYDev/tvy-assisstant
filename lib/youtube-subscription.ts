@@ -282,6 +282,7 @@ export async function toggleAllYouTubeMonthsPaid(
     .from("youtube_subscription_months")
     .update({ paid })
     .eq("shortcode", normalized)
+    .eq("paid", !paid)
     .select("id, shortcode, month, paid");
 
   if (error) throw new Error(`Failed to toggle all months: ${error.message}`);
@@ -314,29 +315,13 @@ export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
   }));
 }
 
-export function namesByShortcodeFromUsers(
-  users: TelegramUserRow[],
-): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const u of users) {
-    if (!u.shortcode) continue;
-    map.set(
-      u.shortcode,
-      [u.first_name, u.last_name].filter(Boolean).join(" "),
-    );
-  }
-  return map;
-}
-
 export function buildReminderMessage(
   members: SubscriptionMember[],
   monthlyFee: number,
   depositTotals: Map<string, number> = new Map(),
-  namesByCode: Map<string, string> = new Map(),
 ): string {
   type Row = {
     id: string;
-    name: string;
     months: number;
     total: number;
     deposit: number;
@@ -344,17 +329,14 @@ export function buildReminderMessage(
   };
 
   const rows: Row[] = [];
-  let totalToPay = 0;
 
   for (const member of members) {
     if (member.unpaid_count === 0) continue;
     const total = member.unpaid_count * monthlyFee;
     const deposit = depositTotals.get(member.id) ?? 0;
     const net = Math.max(total - deposit, 0);
-    totalToPay += net;
     rows.push({
       id: member.id,
-      name: namesByCode.get(member.id) ?? "—",
       months: member.unpaid_count,
       total,
       deposit,
@@ -367,87 +349,37 @@ export function buildReminderMessage(
   }
 
   const money = (n: number) => `$${n.toFixed(2)}`;
-  const padL = (s: string, w: number) =>
-    s.length >= w ? s : " ".repeat(w - s.length) + s;
-  const padR = (s: string, w: number) =>
-    s.length >= w ? s : s + " ".repeat(w - s.length);
+  const monthLabel = (n: number) => (n === 1 ? "1 month" : `${n} months`);
 
-  const col = {
-    code: Math.max(4, ...rows.map((r) => r.id.length)),
-    name: Math.max(4, ...rows.map((r) => r.name.length), "Name".length),
-    mo: Math.max(2, String(Math.max(...rows.map((r) => r.months))).length),
-    total: Math.max(5, "Total".length),
-    deposit: Math.max(7, "Deposit".length),
-    toPay: Math.max(
-      6,
-      "Settled".length,
-      "To pay".length,
-      ...rows.map((r) =>
-        r.net === 0 && r.deposit > 0 ? "Settled".length : money(r.net).length,
-      ),
-    ),
-  };
+  const personBlocks = rows.map((r) => {
+    const settled = r.net === 0 && r.deposit > 0;
+    const icon = settled ? "✅" : "⏳";
+    const who = `${icon} <b>${r.id}</b> — ${monthLabel(r.months)}`;
 
-  const headers = [
-    padR("Code", col.code),
-    padR("Name", col.name),
-    padL("Mo", col.mo),
-    padL("Total", col.total),
-    padL("Deposit", col.deposit),
-    padL("To pay", col.toPay),
-  ];
-
-  const segment = (w: number) => "─".repeat(w + 2);
-  const border = (left: string, mid: string, right: string) =>
-    left +
-    [
-      col.code,
-      col.name,
-      col.mo,
-      col.total,
-      col.deposit,
-      col.toPay,
-    ]
-      .map(segment)
-      .join(mid) +
-    right;
-
-  const tableLines = [
-    border("┌", "┬", "┐"),
-    `│ ${headers.join(" │ ")} │`,
-    border("├", "┼", "┤"),
-    ...rows.map((r) => {
-      const toPayLabel =
-        r.net === 0 && r.deposit > 0 ? "Settled" : money(r.net);
-      const cells = [
-        padR(r.id, col.code),
-        padR(r.name, col.name),
-        padL(String(r.months), col.mo),
-        padL(money(r.total), col.total),
-        padL(money(r.deposit), col.deposit),
-        padL(toPayLabel, col.toPay),
+    if (settled) {
+      return [`${who} — <b>Settled</b> (deposit ${money(r.deposit)})`];
+    }
+    if (r.deposit > 0) {
+      return [
+        who,
+        `   ${money(r.total)} total · ${money(r.deposit)} deposit → To Pay <b>${money(r.net)}</b>`,
       ];
-      return `│ ${cells.join(" │ ")} │`;
-    }),
-    border("└", "┴", "┘"),
-  ];
+    }
+    return [`${who} — To Pay <b>${money(r.net)}</b>`];
+  });
+
+  const personLines = personBlocks.flatMap((block, i) =>
+    i < personBlocks.length - 1 ? [...block, ""] : block,
+  );
 
   const lines = [
     `📺 YouTube payment reminder — ${money(monthlyFee)}/mo`,
     "",
-    "<pre>" + tableLines.join("\n") + "</pre>",
-    "",
-    "Settled = covered by deposit",
+    ...personLines,
   ];
-
-  if (totalToPay > 0) {
-    lines.push(`<b>💵 Total to collect: ${money(totalToPay)}</b>`);
-  } else {
-    lines.push("<b>💵 Total to collect: $0.00</b> (all covered by deposits ✅)");
-  }
 
   return lines.join("\n");
 }
 
-/** Telegram photo captions use HTML for reminder tables (`<pre>` monospace). */
+/** Telegram photo captions use HTML for reminder formatting. */
 export const REMINDER_PARSE_MODE = "HTML" as const;
