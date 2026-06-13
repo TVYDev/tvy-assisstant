@@ -9,8 +9,6 @@ import {
   getUnpaidMonthCountsAll,
   buildReminderMessage,
   REMINDER_PARSE_MODE,
-  namesByShortcodeFromUsers,
-  getAllTelegramUsers,
 } from "@/lib/youtube-subscription";
 import { getAllDepositTotals } from "@/lib/deposit";
 
@@ -41,22 +39,15 @@ export async function GET(req: NextRequest) {
 
   // dry_run: preview current state without inserting new month
   if (!dryRun) await insertCurrentMonthForAll();
-  const [members, depositTotals, users] = await Promise.all([
+  const [members, depositTotals] = await Promise.all([
     getUnpaidMonthCountsAll(),
     getAllDepositTotals(),
-    getAllTelegramUsers(),
   ]);
-  const namesByCode = namesByShortcodeFromUsers(users);
 
   // Send QR photo with the debt summary caption
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  const caption = buildReminderMessage(
-    members,
-    monthlyFee,
-    depositTotals,
-    namesByCode,
-  );
+  const caption = buildReminderMessage(members, monthlyFee, depositTotals);
 
   await bot.api.sendPhoto(groupChatId, file, {
     caption,

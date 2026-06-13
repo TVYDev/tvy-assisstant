@@ -14,7 +14,6 @@ import {
   getUnpaidMonthCountsAll,
   buildReminderMessage,
   REMINDER_PARSE_MODE,
-  namesByShortcodeFromUsers,
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
   getAllTelegramUsers,
@@ -947,17 +946,15 @@ bot.command("previewytreminder", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const [monthlyFee, members, depositTotals, users] = await Promise.all([
+  const [monthlyFee, members, depositTotals] = await Promise.all([
     getConfig("youtube_monthly_fee").then(parseFloat),
     getUnpaidMonthCountsAll(),
     getAllDepositTotals(),
-    getAllTelegramUsers(),
   ]);
-  const namesByCode = namesByShortcodeFromUsers(users);
 
   const caption =
     "🔍 <b>Preview</b> — same as the monthly cron (not posted to group)\n\n" +
-    buildReminderMessage(members, monthlyFee, depositTotals, namesByCode);
+    buildReminderMessage(members, monthlyFee, depositTotals);
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
