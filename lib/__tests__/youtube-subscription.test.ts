@@ -21,7 +21,7 @@ describe("buildReminderMessage", () => {
       },
     ]);
     expect(msg).toContain("1 month × $1.19");
-    expect(msg).toContain("<u>👉 To Pay $1.19</u>");
+    expect(msg).toContain("<b>👉 To Pay $1.19</b>");
   });
 
   it("shows per-month fees when rates differ", () => {
@@ -40,7 +40,7 @@ describe("buildReminderMessage", () => {
     expect(msg).toContain("1 month × $1.19");
     expect(msg).toContain("1 month × $1.49");
     expect(msg).not.toContain("2026-05");
-    expect(msg).toContain("<u>👉 To Pay $2.68</u>");
+    expect(msg).toContain("<b>👉 To Pay $2.68</b>");
   });
 
   it("shows deposit breakdown with mixed monthly fees", () => {
@@ -58,7 +58,7 @@ describe("buildReminderMessage", () => {
       new Map([["BSR", 1.0]]),
     );
     expect(msg).toContain("<b>BSR</b>");
-    expect(msg).toContain("<b><u>👉 To Pay $1.68</u></b>");
+    expect(msg).toContain("<b>👉 To Pay $1.68</b>");
     expect(msg).toContain("1 month × $1.19");
     expect(msg).toContain("1 month × $1.49");
     expect(msg).toContain("deposit $1.00");
@@ -102,5 +102,25 @@ describe("buildReminderMessage", () => {
   it("returns all-paid message when nobody owes", () => {
     const msg = buildReminderMessage([]);
     expect(msg).toContain("everyone's paid up");
+  });
+
+  it("includes a one-time new fee announcement below the header", () => {
+    const msg = buildReminderMessage(
+      [
+        {
+          id: "TLH",
+          months: [{ month: "2026-06-01", fee: 1.49 }],
+          total: 1.49,
+        },
+      ],
+      new Map(),
+      {
+        feeAnnouncement:
+          "📢 New YouTube monthly fee: <b>$1.49</b> (was $1.19) — effective Jun 2026",
+      },
+    );
+    expect(msg).toMatch(
+      /YouTube payment reminder\n\n📢 New YouTube monthly fee[\s\S]*TLH/,
+    );
   });
 });

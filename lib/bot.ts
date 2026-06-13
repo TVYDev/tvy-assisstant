@@ -50,6 +50,7 @@ import {
   resolveFeeForMonth,
   sumMonthCharges,
   isDateToken,
+  resolveYoutubeFeeAnnouncement,
 } from "./youtube-fee";
 import {
   parsePaymentTail,
@@ -71,6 +72,11 @@ const NOT_BOSS_REPLIES = [
   "Bold of you to assume you're my boss. 🦕 Spoiler: you're not.",
   "Hmm... checking my list of bosses... nope, not you. 🦖",
   "access_denied.exe 🦕 (only Vannyou can run this command)",
+  "🦖 Unauthorized. Dino's loyalty card only has one name on it: Vannyou.",
+  "Nice try, impostor! 🦕 My boss would never type it like that. (Maybe.)",
+  "🚫 Admin vibes detected. Boss badge not found. Try again never. 😂",
+  "Dino squints at you... 🦕 Nope. Not the boss. Not even close.",
+  "🔒 Command locked. Only Vannyou has the golden key. 🗝️",
 ];
 
 function notBossReply(ctx: { reply: (msg: string) => unknown }) {
@@ -89,6 +95,9 @@ const QR_CAPTIONS = [
   "One scan away from being a good person! 😇 Do it. Pay Vannyou. 💸",
   "Scan it. Pay it. Don't make Dino chase you. 🦕💨",
   "KHQR loaded! 🔫 Aim your phone at it and shoot some money to Vannyou. 💸😂",
+  "💳 Payment portal open! Scan, pay, become Dino's favorite human today. 🦕⭐",
+  "🦖 The QR code is hungry. Feed it money for Vannyou. Dino is supervising.",
+  "📲 Scan → Pay → Peace. It's that simple. Dino believes in you. 🦕",
 ];
 
 const QR_NO_DEBT_CAPTIONS = [
@@ -97,6 +106,9 @@ const QR_NO_DEBT_CAPTIONS = [
   "No debts detected! 🧼 But hey, here's the QR code — maybe you just like scanning things. No judgment. 🦕",
   "Clean slate! ✨ You're all good with Vannyou. QR is here if you ever want to send a surprise. 💸😇",
   "Dino checked the ledger... you owe nothing! 🦕 Here's the QR anyway — feel free to tip the dino. 😂",
+  "🏆 Debt-free champion! No payment needed, but the QR is here if you're feeling philanthropic. 🦖",
+  "✨ Zero balance, full vibes. QR attached for optional generosity. Dino won't judge. 🦕",
+  "🎁 Nothing owed — but if you want to gift Vannyou anyway, Dino won't stop you. 😏",
 ];
 
 const NO_RECORD_REPLIES = [
@@ -104,6 +116,10 @@ const NO_RECORD_REPLIES = [
   "No records found! 👀 Either you owe nothing (nice!) or Vannyou forgot to add you 😆",
   "Clean slate! 🧼 Or maybe you're just not in the system yet. Ask Vannyou! 🦕",
   "Dino searched everywhere... nothing! 🦕 You're either debt-free or a ghost. 👻",
+  "🔍 Zero hits in the database. New here? Ask Vannyou to add you! 🦖",
+  "👻 Dino checked twice. No record. Either you're invisible or very lucky. 😂",
+  "📭 Empty inbox! No debts, no YouTube, no deposit. Who ARE you? 🦕",
+  "🦖 Dino shrugs. Nothing on file. Tell Vannyou to register you if this looks wrong.",
 ];
 
 const YT_PAID_MSGS_ELDER = [
@@ -115,6 +131,10 @@ const YT_PAID_MSGS_ELDER = [
     `💛 Thank you ${mention} បង! YouTube ${month} is settled — you never disappoint! 🙏`,
   (mention: string, month: string) =>
     `🌟 ${mention} បង paid for ${month}! As expected from the most dependable one in the group. អរគុណ! 🎊`,
+  (mention: string, month: string) =>
+    `🙏 ${mention} បង settled ${month} — the group is lucky to have you! 💛`,
+  (mention: string, month: string) =>
+    `✅ ${mention} បង paid YouTube ${month}! Reliable as always. អរគុណច្រើន! 🙌`,
 ];
 
 const YT_PAID_MSGS = [
@@ -128,6 +148,12 @@ const YT_PAID_MSGS = [
     `🏆 ${mention} paid for ${month}!! Dino would like to personally award you the "Actually Paid" trophy 🦕🏆`,
   (mention: string, month: string) =>
     `💸 Money received from ${mention} for ${month}! Vannyou is happy, Dino is happy, everyone is happy! 🥳`,
+  (mention: string, month: string) =>
+    `🦖 ${mention} just paid ${month}! Dino is updating the "people who actually pay" hall of fame. 🏛️`,
+  (mention: string, month: string) =>
+    `✅ YouTube ${month} — PAID by ${mention}! Dino did not see that coming. (Just kidding. Thank you!) 😂`,
+  (mention: string, month: string) =>
+    `🎊 ${mention} cleared ${month}! The subscription gods are pleased. Dino is pleased. 🦕`,
 ];
 
 const YT_UNPAID_MSGS_ELDER = [
@@ -137,6 +163,10 @@ const YT_UNPAID_MSGS_ELDER = [
     `🙏 ${mention} បង, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
   (mention: string, month: string) =>
     `💛 Just a friendly nudge for ${mention} បង — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
+  (mention: string, month: string) =>
+    `🌸 ${mention} បង, gentle reminder that ${month} YouTube is still open. No pressure at all! 🙏`,
+  (mention: string, month: string) =>
+    `😊 ${mention} បង — whenever you have a moment, ${month} YouTube is pending. Thank you! 💛`,
 ];
 
 const YT_UNPAID_MSGS = [
@@ -150,6 +180,12 @@ const YT_UNPAID_MSGS = [
     `⏰ Tick tock ${mention}! YouTube ${month} is still unpaid. Dino has a long memory. 🦕📋`,
   (mention: string, month: string) =>
     `🔔 Reminder for ${mention}: YouTube ${month} = still unpaid. Just saying. No pressure. (There's pressure.) 😂`,
+  (mention: string, month: string) =>
+    `🦖 ${mention}, ${month} YouTube is still on the unpaid list. Dino is patient... for now. 👀`,
+  (mention: string, month: string) =>
+    `📺 ${mention} — ${month} YouTube payment still pending. Dino sends his regards. 🦕`,
+  (mention: string, month: string) =>
+    `💸 Friendly ping ${mention}: ${month} YouTube ain't paid yet. Dino is just the messenger! 😅`,
 ];
 
 export const bot = new Bot(token);
@@ -999,14 +1035,17 @@ bot.command("previewytreminder", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const [owings, depositTotals] = await Promise.all([
+  const [owings, depositTotals, feeAnnouncement] = await Promise.all([
     getYoutubeReminderOwings(),
     getAllDepositTotals(),
+    resolveYoutubeFeeAnnouncement(),
   ]);
 
   const caption =
     "🔍 <b>Preview</b> — same as the monthly cron (not posted to group)\n\n" +
-    buildReminderMessage(owings, depositTotals);
+    buildReminderMessage(owings, depositTotals, {
+      feeAnnouncement: feeAnnouncement.text ?? undefined,
+    });
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");

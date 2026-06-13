@@ -143,6 +143,27 @@ export async function getConfig(key: string): Promise<string> {
   return (data as { value: string }).value;
 }
 
+export async function getConfigOptional(key: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error)
+    throw new Error(`Failed to fetch config "${key}": ${error.message}`);
+  return data ? (data as { value: string }).value : null;
+}
+
+export async function setConfig(key: string, value: string): Promise<void> {
+  const { error } = await supabase
+    .from("app_config")
+    .upsert({ key, value }, { onConflict: "key" });
+
+  if (error)
+    throw new Error(`Failed to set config "${key}": ${error.message}`);
+}
+
 async function getUnpaidCountForShortcode(shortcode: string): Promise<number> {
   const { count, error } = await supabase
     .from("youtube_subscription_months")
@@ -323,6 +344,7 @@ export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
 export function buildReminderMessage(
   members: { id: string; months: YoutubeMonthCharge[]; total: number }[],
   depositTotals: Map<string, number> = new Map(),
+  options: { feeAnnouncement?: string } = {},
 ): string {
   type Row = {
     id: string;
@@ -357,7 +379,7 @@ export function buildReminderMessage(
   const money = (n: number) => `$${n.toFixed(2)}`;
   const monthLabel = (n: number) => (n === 1 ? "1 month" : `${n} months`);
   const toPay = (amount: number) =>
-    `<b><u>👉 To Pay ${money(amount)}</u></b>`;
+    `<b>👉 To Pay ${money(amount)}</b>`;
 
   const personBlocks = rows.map((r) => {
     const settled = r.net === 0 && r.deposit > 0;
@@ -384,11 +406,11 @@ export function buildReminderMessage(
     i < personBlocks.length - 1 ? [...block, ""] : block,
   );
 
-  const lines = [
-    "📺 YouTube payment reminder",
-    "",
-    ...personLines,
-  ];
+  const lines = ["📺 YouTube payment reminder"];
+  if (options.feeAnnouncement) {
+    lines.push("", options.feeAnnouncement);
+  }
+  lines.push("", ...personLines);
 
   return lines.join("\n");
 }

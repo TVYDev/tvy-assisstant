@@ -64,6 +64,22 @@ const GREETINGS = [
     username
       ? `💼 Opening the books for ${name} (@${username}) 👇`
       : `💼 Opening the books for ${name} 👇`,
+  (name: string, username: string) =>
+    username
+      ? `🦖 Ledger time, ${name} (@${username}). Dino brought popcorn. 🍿`
+      : `🦖 Ledger time, ${name}. Dino brought popcorn. 🍿`,
+  (name: string, username: string) =>
+    username
+      ? `🔍 ${name} (@${username}), let's see what the numbers say...`
+      : `🔍 ${name}, let's see what the numbers say...`,
+  (name: string, username: string) =>
+    username
+      ? `👋 Yo ${name} (@${username}) — Dino's got your balance right here`
+      : `👋 Yo ${name} — Dino's got your balance right here`,
+  (name: string, username: string) =>
+    username
+      ? `📊 Financial report for ${name} (@${username}), courtesy of Nailong 🦕`
+      : `📊 Financial report for ${name}, courtesy of Nailong 🦕`,
 ];
 
 const YT_SLEEPING_ON = [
@@ -71,6 +87,10 @@ const YT_SLEEPING_ON = [
   (total: string) => `📺 YouTube subscription collecting dust: $${total}`,
   (total: string) => `😅 YouTube: still unpaid btw — $${total}`,
   (total: string) => `📺 YouTube tab (in case you forgot): $${total}`,
+  (total: string) => `📺 YouTube balance doing the side-eye thing: $${total}`,
+  (total: string) => `🦕 Dino found unpaid YouTube months worth $${total}`,
+  (total: string) => `📺 Streaming debt alert: $${total} on YouTube`,
+  (total: string) => `😬 YouTube subscription: $${total} still pending`,
 ];
 
 const NET_OWE_ME = [
@@ -82,6 +102,14 @@ const NET_OWE_ME = [
     `💰 Grand total you owe: $${amount}. Venmo? KHQR? Cash? Dino accepts all! 🦕`,
   (amount: string) =>
     `🧾 Tab total: $${amount} owed to Vannyou. The QR code is waiting for you! 😂`,
+  (amount: string) =>
+    `🦕 Final verdict: $${amount} to Vannyou. No appeals. Pay up! 😂`,
+  (amount: string) =>
+    `💸 Net damage: $${amount}. Dino believes in you (to pay). 🙏`,
+  (amount: string) =>
+    `📉 Your balance with Vannyou: -$${amount}. Fix it before Dino sends another reminder! 🦖`,
+  (amount: string) =>
+    `🧮 Math checked twice: you owe $${amount}. Dino doesn't make typos. 📋`,
 ];
 
 const I_OWE_THEM = [
@@ -97,6 +125,10 @@ const I_OWE_THEM = [
     `🎰 Jackpot? Vannyou owes you $${amount}. Dino has never seen this energy before. 😂`,
   (amount: string) =>
     `🦕 Historic ledger entry: Vannyou owes you $${amount}. Nailong approves this chaos.`,
+  (amount: string) =>
+    `🏦 Vannyou's tab with you: $${amount} in YOUR favor. Dino is taking notes. 📝`,
+  (amount: string) =>
+    `🎁 Surprise! Vannyou owes you $${amount}. Don't let him pretend he forgot. 😏`,
 ];
 
 const DEPOSIT_ON_FILE = [
@@ -106,6 +138,8 @@ const DEPOSIT_ON_FILE = [
   (amount: string) => `💰 Deposit balance: $${amount} — your money, his problem 😌`,
   (amount: string) => `💰 $${amount} in your Vannyou wallet. Not debt. Power move.`,
   (amount: string) => `💰 Credit available: $${amount}. Dino notes you planned ahead 👀`,
+  (amount: string) => `💰 $${amount} prepaid — like a buffet card for future payments 🎟️`,
+  (amount: string) => `💰 Deposit stash: $${amount}. Dino respects the foresight. 🦖`,
 ];
 
 const RARE_VANNYOU_OWES_YOU = [
@@ -161,6 +195,26 @@ const ALL_SETTLED = [
   "🎉 All settled up! You and Vannyou are even. Live in peace! 🕊️",
   "🦕 Zero balance! Dino approves. You're officially a good person today! ✅",
   "💚 Nothing owed, nothing due. Clean money, clean conscience! 😇",
+  "🏆 Debt-free status achieved! Dino is doing a little victory dance. 🦖",
+  "✅ Tab closed. Balance zero. Dino salutes you. 🫡",
+  "🌟 Financially zen. No debts, no drama. Dino is impressed. 😌",
+  "🧼 Spotless ledger! You and Vannyou are square. Dino can rest now. 🦕",
+  "🎊 ZERO. NADA. ZILCH. Dino checked three times because he didn't believe it. 🦖",
+  "🦕 Dino whispered: 'finally, a peaceful soul.' Nothing owed. Go touch grass. 🌿",
+  "💸 Your wallet and Vannyou's wallet shook hands and agreed to disagree. Settled! 🤝",
+  "🧘 You have achieved financial enlightenment: owe nothing, fear nothing. Dino bows. 🙏",
+  "🎬 Roll credits — no debts, no cliffhanger. Dino gives this episode 5 stars. ⭐",
+  "🦖 Dino deleted your name from the 'chase list.' You're free. Fly, birdie. 🕊️",
+  "🍾 Pop the imaginary champagne! Balance zero. Dino is not sending a reminder. Ever. 😂",
+  "👑 Crown status: Debtless Royalty. Vannyou has no claim on you today. 👸",
+  "🎰 You hit the jackpot: $0 owed. Dino is suspicious but happy. 🦕",
+  "📭 Inbox empty, guilt empty, balance empty. This is what peace feels like. ✨",
+  "🦕 Dino stamped your file: APPROVED. No payment. No chase. Just vibes. 😌",
+  "🏖️ Consider yourself on financial vacation. Nothing due. Dino is jealous. 🌴",
+  "🎯 Bullseye: perfectly even with Vannyou. Dino has nothing to nag you about. 🦖",
+  "🧊 Your debt meter is frozen at zero. Dino won't poke it. Probably. 😏",
+  "🎪 Ladies and gentlemen — a balanced tab! Dino drops the mic. 🎤",
+  "🦕 Nailong declares you 'certified chill.' Zero owed. Carry on. ✌️",
 ];
 
 export function calculateNetOwed(params: {
