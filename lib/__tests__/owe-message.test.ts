@@ -9,6 +9,7 @@ const { mockResolveDepositForTelegramUser } = vi.hoisted(() => ({
 vi.mock("../debt", () => ({
   getDebtByUserId: vi.fn(),
   getDebtByUsername: vi.fn(),
+  getDebtByShortcode: vi.fn(),
 }));
 
 vi.mock("../youtube-fee", () => ({
@@ -20,24 +21,36 @@ vi.mock("../youtube-fee", () => ({
 vi.mock("../youtube-subscription", () => ({
   getMemberByTelegramIdentity: vi.fn(),
   getMemberByUsername: vi.fn(),
+  getMemberByShortcode: vi.fn(),
+  getTelegramUsernameByShortcode: vi.fn(),
 }));
 
 vi.mock("../deposit", () => ({
   resolveDepositForTelegramUser: mockResolveDepositForTelegramUser,
+  getDepositBalanceByShortcode: vi.fn(),
 }));
 
-import { buildOweMessage } from "../owe-message";
-import { getDebtByUserId, getDebtByUsername } from "../debt";
+import { buildOweMessage, buildOweMessageForShortcode } from "../owe-message";
+import { getDebtByUserId, getDebtByUsername, getDebtByShortcode } from "../debt";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
+  getMemberByShortcode,
+  getTelegramUsernameByShortcode,
 } from "../youtube-subscription";
 import { getUnpaidYoutubeOwing } from "../youtube-fee";
+import { getDepositBalanceByShortcode } from "../deposit";
 const mockGetDebtByUserId = vi.mocked(getDebtByUserId);
 const mockGetDebtByUsername = vi.mocked(getDebtByUsername);
+const mockGetDebtByShortcode = vi.mocked(getDebtByShortcode);
 const mockGetMemberByTelegramIdentity = vi.mocked(getMemberByTelegramIdentity);
 const mockGetMemberByUsername = vi.mocked(getMemberByUsername);
+const mockGetMemberByShortcode = vi.mocked(getMemberByShortcode);
+const mockGetTelegramUsernameByShortcode = vi.mocked(
+  getTelegramUsernameByShortcode,
+);
 const mockGetUnpaidYoutubeOwing = vi.mocked(getUnpaidYoutubeOwing);
+const mockGetDepositBalanceByShortcode = vi.mocked(getDepositBalanceByShortcode);
 
 // ── shared fixtures ───────────────────────────────────────────────────────────
 
@@ -202,7 +215,7 @@ describe("buildOweMessage", () => {
     const result = await buildOweMessage(123, "user", "User");
     // one of the ALL_SETTLED messages — all contain zero-balance language
     expect(result).not.toBeNull();
-    expect(result).toMatch(/clean|settled|zero|nothing|empty|peace|debt-free|free|nada|even/i);
+    expect(result).toMatch(/clean|settled|zero|nothing|empty|peace|debt-free|free|nada|even|square|spotless|គ្មាន|ស្អាត/i);
   });
 
   it("uses username only when userId is 0", async () => {
@@ -237,6 +250,33 @@ describe("buildOweMessage", () => {
     expect(mockGetMemberByUsername).not.toHaveBeenCalled();
     expect(mockGetDebtByUserId).toHaveBeenCalledWith(123);
     expect(mockGetMemberByTelegramIdentity).toHaveBeenCalledWith(123);
+    expect(result).toBeNull();
+  });
+});
+
+describe("buildOweMessageForShortcode", () => {
+  it("builds the same style message from shortcode lookups", async () => {
+    mockGetDebtByShortcode.mockResolvedValue(debtRecord({ shortcode: "BSR" }));
+    mockGetMemberByShortcode.mockResolvedValue(ytMember(2));
+    mockGetDepositBalanceByShortcode.mockResolvedValue(0);
+    mockGetTelegramUsernameByShortcode.mockResolvedValue("bsr_user");
+    mockYoutubeOwing(2);
+
+    const result = await buildOweMessageForShortcode("bsr");
+    expect(mockGetDebtByShortcode).toHaveBeenCalledWith("BSR");
+    expect(result).toContain("Tester");
+    expect(result).toContain("@bsr_user");
+    expect(result).toContain("$25.00");
+    expect(result).toContain("$10.00");
+  });
+
+  it("returns null when shortcode has no records", async () => {
+    mockGetDebtByShortcode.mockResolvedValue(NO_DEBT);
+    mockGetMemberByShortcode.mockResolvedValue(NO_MEMBER);
+    mockGetDepositBalanceByShortcode.mockResolvedValue(0);
+    mockGetTelegramUsernameByShortcode.mockResolvedValue(null);
+
+    const result = await buildOweMessageForShortcode("NOBODY");
     expect(result).toBeNull();
   });
 });
