@@ -728,7 +728,6 @@ bot.command("ytpaid", async (ctx) => {
     return ctx.reply("Month values must be YYYY-MM (e.g. 2026-04).");
   }
 
-  const { tail } = parsePaymentTail(rest);
   const ytOwing = await getUnpaidYoutubeOwing(code, months);
   const paymentTotal = ytOwing.total;
   const settlementNote =
