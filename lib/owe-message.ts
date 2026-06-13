@@ -1,11 +1,14 @@
 import type { DebtRecord } from "./debt";
 import { getDebtByUsername, getDebtByUserId } from "./debt";
 import { resolveDepositForTelegramUser } from "./deposit";
+import {
+  getUnpaidYoutubeOwing,
+  formatYoutubeMonthSummary,
+} from "./youtube-fee";
 import type { SubscriptionMember } from "./youtube-subscription";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
-  getConfig,
 } from "./youtube-subscription";
 
 /** Resolve ledger debt: stub row by Telegram username first, then linked row by user id. */
@@ -174,12 +177,16 @@ export async function buildOweMessage(
   username: string,
   firstName: string,
 ): Promise<string | null> {
-  const [record, subscriptionMember, monthlyFee, deposit] = await Promise.all([
+  const [record, subscriptionMember, deposit] = await Promise.all([
     resolveDebtForTelegramUser(userId, username),
     resolveSubscriptionMemberForTelegramUser(userId, username),
-    getConfig("youtube_monthly_fee").then(parseFloat),
     resolveDepositForTelegramUser(userId, username),
   ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(subscriptionMember.id)
+      : { total: 0, months: [] };
 
   const depositTotal = deposit ?? 0;
 
@@ -210,20 +217,14 @@ export async function buildOweMessage(
   }
 
   if (subscriptionMember && subscriptionMember.unpaid_count > 0) {
-    const subTotal = subscriptionMember.unpaid_count * monthlyFee;
     lines.push("");
-    lines.push(pick(YT_SLEEPING_ON)(subTotal.toFixed(2)));
-    lines.push(
-      `  • ${subscriptionMember.unpaid_count} month(s) × $${monthlyFee.toFixed(2)}/month`,
-    );
+    lines.push(pick(YT_SLEEPING_ON)(ytOwing.total.toFixed(2)));
+    lines.push(`  • ${formatYoutubeMonthSummary(ytOwing)}`);
   }
 
   const debtOwesMe = record?.owes_me ?? 0;
   const debtIOwe = record?.i_owe ?? 0;
-  const subOwed =
-    subscriptionMember && subscriptionMember.unpaid_count > 0
-      ? subscriptionMember.unpaid_count * monthlyFee
-      : 0;
+  const subOwed = ytOwing.total;
 
   if (depositTotal > 0) {
     lines.push("");

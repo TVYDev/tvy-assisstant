@@ -10,8 +10,6 @@ import {
   toggleYouTubeMonthPaid,
   bulkToggleYouTubeMonthsPaid,
   toggleAllYouTubeMonthsPaid,
-  getConfig,
-  getUnpaidMonthCountsAll,
   buildReminderMessage,
   REMINDER_PARSE_MODE,
   getTelegramUsernameByShortcode,
@@ -43,6 +41,17 @@ import {
   resolveDepositForTelegramUser,
 } from "./deposit";
 import {
+  getUnpaidYoutubeOwing,
+  getYoutubeReminderOwings,
+  getYoutubeFeeSchedules,
+  addYoutubeFeeSchedule,
+  formatFeeScheduleLine,
+  getCurrentYoutubeMonthlyFee,
+  resolveFeeForMonth,
+  sumMonthCharges,
+  isDateToken,
+} from "./youtube-fee";
+import {
   parsePaymentTail,
   settlePayment,
   formatPaymentSettlement,
@@ -68,18 +77,6 @@ function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   const msg =
     NOT_BOSS_REPLIES[Math.floor(Math.random() * NOT_BOSS_REPLIES.length)];
   return ctx.reply(msg);
-}
-
-async function countUnpaidYouTubeMonths(
-  shortcode: string,
-  monthFilters?: string[],
-): Promise<number> {
-  const months = await getYouTubeMonthsForShortcode(shortcode);
-  const unpaid = months.filter((m) => !m.paid);
-  if (!monthFilters?.length) return unpaid.length;
-  return unpaid.filter((m) =>
-    monthFilters.some((f) => m.month.startsWith(f)),
-  ).length;
 }
 
 function pick<T>(arr: T[]): T {
@@ -228,19 +225,22 @@ bot.command("qr", async (ctx) => {
   const username = ctx.from?.username ?? "";
   const firstName = ctx.from?.first_name ?? "friend";
 
-  const [record, member, monthlyFee, deposit] = await Promise.all([
+  const [record, member, deposit] = await Promise.all([
     resolveDebtForTelegramUser(userId, username),
     resolveSubscriptionMemberForTelegramUser(userId, username),
-    getConfig("youtube_monthly_fee").then(parseFloat),
     resolveDepositForTelegramUser(userId, username),
   ]);
+
+  const ytOwing =
+    member && member.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(member.id)
+      : { total: 0, months: [] };
 
   const net = calculateNetOwed({
     owes_me: record?.owes_me ?? 0,
     i_owe: record?.i_owe ?? 0,
     deposit,
-    subOwed:
-      member && member.unpaid_count > 0 ? member.unpaid_count * monthlyFee : 0,
+    subOwed: ytOwing.total,
   });
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
@@ -433,17 +433,18 @@ bot.command("debts", async (ctx) => {
   if (!shortcode)
     return ctx.reply("Usage: /debts <shortcode>\nExample: /debts BSR");
 
-  const [record, ytMember, monthlyFee, deposit] = await Promise.all([
+  const [record, ytMember, deposit, schedules] = await Promise.all([
     getDebtByShortcode(shortcode),
     getMemberByShortcode(shortcode),
-    getConfig("youtube_monthly_fee").then(parseFloat),
     getDepositBalanceByShortcode(shortcode),
+    getYoutubeFeeSchedules(),
   ]);
 
-  // Only fetch YouTube months if they're actually a subscription member
   const ytMonths = ytMember
     ? await getYouTubeMonthsForShortcode(shortcode)
     : [];
+  const unpaidYtMonths = ytMonths.filter((m) => !m.paid);
+  const unpaidYt = sumMonthCharges(unpaidYtMonths, schedules, false).total;
 
   const lines: string[] = [
     `📋 Debts for ${shortcode}${record ? ` (${record.name})` : ""}`,
@@ -469,13 +470,13 @@ bot.command("debts", async (ctx) => {
     );
   }
 
-  const unpaidYtMonths = ytMonths.filter((m) => !m.paid);
   if (ytMember) {
     lines.push("");
     if (unpaidYtMonths.length > 0) {
       lines.push("📺 YouTube months (unpaid):");
       for (const m of unpaidYtMonths) {
-        lines.push(`  ⏳ ${m.month.slice(0, 7)}`);
+        const fee = resolveFeeForMonth(schedules, m.month);
+        lines.push(`  ⏳ ${m.month.slice(0, 7)} — $${fee.toFixed(2)}`);
       }
     } else {
       lines.push("📺 YouTube: all paid up! ✅");
@@ -485,7 +486,6 @@ bot.command("debts", async (ctx) => {
   const unpaidDebt = record
     ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
     : 0;
-  const unpaidYt = ytMonths.filter((m) => !m.paid).length * monthlyFee;
   const grossTotal = unpaidDebt + unpaidYt;
   const netTotal = calculateNetOwed({
     owes_me: unpaidDebt,
@@ -524,17 +524,15 @@ bot.command("paid", async (ctx) => {
   const shortcode = parts[0].toUpperCase();
   const { tail } = parsePaymentTail(parts.slice(1));
 
-  const [record, ytMonths, monthlyFee] = await Promise.all([
+  const [record, ytOwing] = await Promise.all([
     getDebtByShortcode(shortcode),
-    getYouTubeMonthsForShortcode(shortcode),
-    getConfig("youtube_monthly_fee").then(parseFloat),
+    getUnpaidYoutubeOwing(shortcode),
   ]);
 
   const unpaidDebt = record
     ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
     : 0;
-  const unpaidYtCount = ytMonths.filter((m) => !m.paid).length;
-  const paymentTotal = unpaidDebt + unpaidYtCount * monthlyFee;
+  const paymentTotal = unpaidDebt + ytOwing.total;
 
   await Promise.all([markAllPaid(shortcode), markYouTubePaid(shortcode)]);
 
@@ -730,9 +728,9 @@ bot.command("ytpaid", async (ctx) => {
     return ctx.reply("Month values must be YYYY-MM (e.g. 2026-04).");
   }
 
-  const monthlyFee = await getConfig("youtube_monthly_fee").then(parseFloat);
-  const unpaidCount = await countUnpaidYouTubeMonths(code, months);
-  const paymentTotal = unpaidCount * monthlyFee;
+  const { tail } = parsePaymentTail(rest);
+  const ytOwing = await getUnpaidYoutubeOwing(code, months);
+  const paymentTotal = ytOwing.total;
   const settlementNote =
     months.length === 1
       ? `YouTube ${months[0]}`
@@ -863,12 +861,11 @@ bot.command("ytpaidall", async (ctx) => {
   const shortcode = parts[0].toUpperCase();
   const { tail } = parsePaymentTail(parts.slice(1));
 
-  const [unpaidCount, monthlyFee] = await Promise.all([
-    countUnpaidYouTubeMonths(shortcode),
-    getConfig("youtube_monthly_fee").then(parseFloat),
+  const [ytOwing] = await Promise.all([
+    getUnpaidYoutubeOwing(shortcode),
   ]);
 
-  if (unpaidCount === 0) {
+  if (ytOwing.months.length === 0) {
     const allMonths = await getYouTubeMonthsForShortcode(shortcode);
     if (!allMonths.length) {
       return ctx.reply(`No YouTube months found for ${shortcode}.`);
@@ -882,7 +879,7 @@ bot.command("ytpaidall", async (ctx) => {
   try {
     const settlement = await settlePayment(
       shortcode,
-      unpaidCount * monthlyFee,
+      ytOwing.total,
       tail,
       `YouTube all months for ${shortcode}`,
     );
@@ -940,21 +937,77 @@ bot.command("ytunpaidall", async (ctx) => {
   return;
 });
 
+// Owner-only: /ytfees — list YouTube fee schedules
+bot.command("ytfees", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const schedules = await getYoutubeFeeSchedules();
+  if (!schedules.length) {
+    return ctx.reply("No YouTube fee schedules configured.");
+  }
+
+  const current = await getCurrentYoutubeMonthlyFee();
+  const lines = [
+    `📺 YouTube fee schedules (current month: $${current.toFixed(2)}/mo)`,
+    "",
+    ...schedules.map((s) => `  ${formatFeeScheduleLine(s)}`),
+  ];
+  return ctx.reply(lines.join("\n"));
+});
+
+// Owner-only: /addytfee <amount> <from YYYY-MM-DD> [to YYYY-MM-DD]
+bot.command("addytfee", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
+  if (parts.length < 2) {
+    return ctx.reply(
+      "Usage: /addytfee <amount> <from YYYY-MM-DD> [to YYYY-MM-DD]\n" +
+        "  /addytfee 1.49 2026-06-15 — new rate from 15 Jun 2026\n" +
+        "  /addytfee 1.19 2020-01-01 2026-05-31 — fixed period\n" +
+        "  (YYYY-MM also works — treated as the 1st of that month)",
+    );
+  }
+
+  const fee = parseFloat(parts[0]);
+  const from = parts[1];
+  const to = parts[2] ?? null;
+
+  if (Number.isNaN(fee) || fee < 0) {
+    return ctx.reply("Amount must be a non-negative number.");
+  }
+  if (!isDateToken(from) || (to && !isDateToken(to))) {
+    return ctx.reply("Dates must be YYYY-MM-DD or YYYY-MM (e.g. 2026-06-15).");
+  }
+
+  try {
+    const schedule = await addYoutubeFeeSchedule(fee, from, to);
+    return ctx.reply(
+      `✅ Added YouTube fee schedule:\n${formatFeeScheduleLine(schedule)}`,
+    );
+  } catch (err) {
+    return ctx.reply(`❌ ${(err as Error).message}`);
+  }
+});
+
 // Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat
 bot.command("previewytreminder", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
 
-  const [monthlyFee, members, depositTotals] = await Promise.all([
-    getConfig("youtube_monthly_fee").then(parseFloat),
-    getUnpaidMonthCountsAll(),
+  const [owings, depositTotals] = await Promise.all([
+    getYoutubeReminderOwings(),
     getAllDepositTotals(),
   ]);
 
   const caption =
     "🔍 <b>Preview</b> — same as the monthly cron (not posted to group)\n\n" +
-    buildReminderMessage(members, monthlyFee, depositTotals);
+    buildReminderMessage(owings, depositTotals);
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
@@ -971,17 +1024,15 @@ bot.command("allowe", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const [debtRecords, ytMembers, monthlyFee, allUsers, depositTotals] =
-    await Promise.all([
-      getAllDebtRecords(),
-      getUnpaidMonthCountsAll(),
-      getConfig("youtube_monthly_fee").then(parseFloat),
-      getAllTelegramUsers(),
-      getAllDepositTotals(),
-    ]);
+  const [debtRecords, ytOwings, allUsers, depositTotals] = await Promise.all([
+    getAllDebtRecords(),
+    getYoutubeReminderOwings(),
+    getAllTelegramUsers(),
+    getAllDepositTotals(),
+  ]);
 
   const debtMap = new Map(debtRecords.map((r) => [r.shortcode, r]));
-  const ytMap = new Map(ytMembers.map((m) => [m.id, m.unpaid_count]));
+  const ytMap = new Map(ytOwings.map((o) => [o.id, o]));
   const nameMap = new Map(
     allUsers
       .filter((u) => u.shortcode)
@@ -1002,11 +1053,12 @@ bot.command("allowe", async (ctx) => {
 
   for (const code of [...allShortcodes].sort()) {
     const record = debtMap.get(code);
-    const ytUnpaid = ytMap.get(code) ?? 0;
+    const ytOwing = ytMap.get(code);
+    const ytUnpaid = ytOwing?.months.length ?? 0;
     const unpaidDebt = record
       ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
       : 0;
-    const ytTotal = ytUnpaid * monthlyFee;
+    const ytTotal = ytOwing?.total ?? 0;
     const deposit = depositTotals.get(code) ?? 0;
     const grossTotal = unpaidDebt + ytTotal;
     const netTotal = calculateNetOwed({
@@ -1183,8 +1235,12 @@ bot.command("help", async (ctx) => {
       "    → Mark ALL months paid; optional amount or deposit\n" +
       "  /ytunpaidall <shortcode>\n" +
       "    → Mark ALL months as unpaid (1 group notification)\n" +
+      "  /ytfees\n" +
+      "    → List YouTube fee schedules (effective / expiry dates)\n" +
+      "  /addytfee <amount> <from YYYY-MM-DD> [to YYYY-MM-DD]\n" +
+      "    → Add a fee period by date; auto-closes prior open-ended schedule\n" +
       "  /previewytreminder\n" +
-      "    → Preview monthly YouTube reminder (QR + table) in this chat\n" +
+      "    → Preview monthly YouTube reminder (QR + list) in this chat\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +

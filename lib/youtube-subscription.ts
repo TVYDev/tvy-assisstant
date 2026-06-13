@@ -1,3 +1,8 @@
+import type { YoutubeMonthCharge } from "./youtube-fee";
+import {
+  formatReminderMonthFeeBreakdown,
+  formatReminderMonthFeeSuffix,
+} from "./youtube-fee";
 import { supabase } from "./supabase";
 
 export interface SubscriptionMember {
@@ -316,12 +321,12 @@ export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
 }
 
 export function buildReminderMessage(
-  members: SubscriptionMember[],
-  monthlyFee: number,
+  members: { id: string; months: YoutubeMonthCharge[]; total: number }[],
   depositTotals: Map<string, number> = new Map(),
 ): string {
   type Row = {
     id: string;
+    monthCharges: YoutubeMonthCharge[];
     months: number;
     total: number;
     deposit: number;
@@ -331,13 +336,14 @@ export function buildReminderMessage(
   const rows: Row[] = [];
 
   for (const member of members) {
-    if (member.unpaid_count === 0) continue;
-    const total = member.unpaid_count * monthlyFee;
+    if (member.months.length === 0) continue;
+    const total = member.total;
     const deposit = depositTotals.get(member.id) ?? 0;
     const net = Math.max(total - deposit, 0);
     rows.push({
       id: member.id,
-      months: member.unpaid_count,
+      monthCharges: member.months,
+      months: member.months.length,
       total,
       deposit,
       net,
@@ -350,22 +356,28 @@ export function buildReminderMessage(
 
   const money = (n: number) => `$${n.toFixed(2)}`;
   const monthLabel = (n: number) => (n === 1 ? "1 month" : `${n} months`);
+  const toPay = (amount: number) =>
+    `<b><u>👉 To Pay ${money(amount)}</u></b>`;
 
   const personBlocks = rows.map((r) => {
     const settled = r.net === 0 && r.deposit > 0;
     const icon = settled ? "✅" : "⏳";
-    const who = `${icon} <b>${r.id}</b> — ${monthLabel(r.months)}`;
+    const feeSuffix = formatReminderMonthFeeSuffix(r.monthCharges);
+    const who = `${icon} <b>${r.id}</b> — ${monthLabel(r.months)}${feeSuffix}`;
+    const feeBreakdown = formatReminderMonthFeeBreakdown(r.monthCharges);
 
     if (settled) {
-      return [`${who} — <b>Settled</b> (deposit ${money(r.deposit)})`];
+      const lines = [`${who} — <b>Settled</b> (deposit ${money(r.deposit)})`];
+      if (feeBreakdown) lines.push(`   ${feeBreakdown}`);
+      return lines;
     }
+
+    const lines = [`${who} — ${toPay(r.net)}`];
+    if (feeBreakdown) lines.push(`   ${feeBreakdown}`);
     if (r.deposit > 0) {
-      return [
-        who,
-        `   ${money(r.total)} total · ${money(r.deposit)} deposit → To Pay <b>${money(r.net)}</b>`,
-      ];
+      lines.push(`   deposit ${money(r.deposit)}`);
     }
-    return [`${who} — To Pay <b>${money(r.net)}</b>`];
+    return lines;
   });
 
   const personLines = personBlocks.flatMap((block, i) =>
@@ -373,7 +385,7 @@ export function buildReminderMessage(
   );
 
   const lines = [
-    `📺 YouTube payment reminder — ${money(monthlyFee)}/mo`,
+    "📺 YouTube payment reminder",
     "",
     ...personLines,
   ];
