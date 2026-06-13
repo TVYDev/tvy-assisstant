@@ -282,6 +282,7 @@ export async function toggleAllYouTubeMonthsPaid(
     .from("youtube_subscription_months")
     .update({ paid })
     .eq("shortcode", normalized)
+    .eq("paid", !paid)
     .select("id, shortcode, month, paid");
 
   if (error) throw new Error(`Failed to toggle all months: ${error.message}`);

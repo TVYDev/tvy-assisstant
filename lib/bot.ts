@@ -869,10 +869,15 @@ bot.command("ytpaidall", async (ctx) => {
     getConfig("youtube_monthly_fee").then(parseFloat),
   ]);
 
-  const results = await toggleAllYouTubeMonthsPaid(shortcode, true);
-  if (!results.length) {
-    return ctx.reply(`No YouTube months found for ${shortcode}.`);
+  if (unpaidCount === 0) {
+    const allMonths = await getYouTubeMonthsForShortcode(shortcode);
+    if (!allMonths.length) {
+      return ctx.reply(`No YouTube months found for ${shortcode}.`);
+    }
+    return ctx.reply(`✅ ${shortcode} YouTube is already all paid!`);
   }
+
+  const results = await toggleAllYouTubeMonthsPaid(shortcode, true);
 
   let settlementSuffix = "";
   try {
@@ -892,7 +897,7 @@ bot.command("ytpaidall", async (ctx) => {
   }
 
   await ctx.reply(
-    `✅ All ${results.length} month(s) for ${shortcode} marked as paid! 🎉${settlementSuffix}`,
+    `✅ ${results.length} unpaid month(s) for ${shortcode} marked as paid! 🎉${settlementSuffix}`,
   );
   await notifyYtGroupBulk(
     results[0].shortcode,
@@ -913,11 +918,20 @@ bot.command("ytunpaidall", async (ctx) => {
       "Usage: /ytunpaidall <shortcode>\nExample: /ytunpaidall PVS",
     );
 
+  const allMonths = await getYouTubeMonthsForShortcode(shortcode);
+  if (!allMonths.length) {
+    return ctx.reply(`No YouTube months found for ${shortcode}.`);
+  }
+  const paidCount = allMonths.filter((m) => m.paid).length;
+  if (paidCount === 0) {
+    return ctx.reply(`⏳ ${shortcode} YouTube is already all unpaid.`);
+  }
+
   const results = await toggleAllYouTubeMonthsPaid(shortcode, false);
   if (!results.length)
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
   await ctx.reply(
-    `⏳ All ${results.length} month(s) for ${shortcode} marked as unpaid. Back to square one! 😈`,
+    `⏳ ${results.length} paid month(s) for ${shortcode} marked as unpaid. Back to square one! 😈`,
   );
   await notifyYtGroupBulk(
     results[0].shortcode,
