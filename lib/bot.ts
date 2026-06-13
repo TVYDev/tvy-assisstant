@@ -18,6 +18,7 @@ import {
 } from "./youtube-subscription";
 import {
   buildOweMessage,
+  buildOweMessageForShortcode,
   calculateNetOwed,
   resolveDebtForTelegramUser,
   resolveSubscriptionMemberForTelegramUser,
@@ -1029,6 +1030,29 @@ bot.command("addytfee", async (ctx) => {
   }
 });
 
+// Owner-only: /previewowe <shortcode> — preview /owe for a user by shortcode
+bot.command("previewowe", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const shortcode = ctx.match?.trim().toUpperCase();
+  if (!shortcode) {
+    return ctx.reply(
+      "Usage: /previewowe <shortcode>\nExample: /previewowe BSR",
+    );
+  }
+
+  const message = await buildOweMessageForShortcode(shortcode);
+  if (!message) {
+    return ctx.reply(`No records found for ${shortcode}.`);
+  }
+
+  return ctx.reply(
+    `🔍 Preview — /owe for ${shortcode} (only you see this)\n\n${message}`,
+  );
+});
+
 // Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat
 bot.command("previewytreminder", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -1279,6 +1303,8 @@ bot.command("help", async (ctx) => {
       "    → Add a fee period by date; auto-closes prior open-ended schedule\n" +
       "  /previewytreminder\n" +
       "    → Preview monthly YouTube reminder (QR + list) in this chat\n" +
+      "  /previewowe <shortcode>\n" +
+      "    → Preview /owe message for a user by shortcode\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +

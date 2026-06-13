@@ -1,6 +1,9 @@
 import type { DebtRecord } from "./debt";
-import { getDebtByUsername, getDebtByUserId } from "./debt";
-import { resolveDepositForTelegramUser } from "./deposit";
+import { getDebtByUsername, getDebtByUserId, getDebtByShortcode } from "./debt";
+import {
+  getDepositBalanceByShortcode,
+  resolveDepositForTelegramUser,
+} from "./deposit";
 import {
   getUnpaidYoutubeOwing,
   formatYoutubeMonthSummary,
@@ -9,6 +12,8 @@ import type { SubscriptionMember } from "./youtube-subscription";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
+  getMemberByShortcode,
+  getTelegramUsernameByShortcode,
 } from "./youtube-subscription";
 
 /** Resolve ledger debt: stub row by Telegram username first, then linked row by user id. */
@@ -226,32 +231,19 @@ export function calculateNetOwed(params: {
   return params.owes_me + params.subOwed - params.i_owe - params.deposit;
 }
 
-export async function buildOweMessage(
-  userId: number,
-  username: string,
-  firstName: string,
-): Promise<string | null> {
-  const [record, subscriptionMember, deposit] = await Promise.all([
-    resolveDebtForTelegramUser(userId, username),
-    resolveSubscriptionMemberForTelegramUser(userId, username),
-    resolveDepositForTelegramUser(userId, username),
-  ]);
-
-  const ytOwing =
-    subscriptionMember && subscriptionMember.unpaid_count > 0
-      ? await getUnpaidYoutubeOwing(subscriptionMember.id)
-      : { total: 0, months: [] };
-
-  const depositTotal = deposit ?? 0;
+function formatOweMessageLines(params: {
+  record: DebtRecord | null;
+  subscriptionMember: SubscriptionMember | null;
+  ytOwing: { total: number; months: { month: string; fee: number }[] };
+  depositTotal: number;
+  name: string;
+  username: string;
+}): string | null {
+  const { record, subscriptionMember, ytOwing, depositTotal, name, username } =
+    params;
 
   if (!record && !subscriptionMember && depositTotal === 0) return null;
 
-  const name =
-    record?.name ??
-    firstName ??
-    record?.shortcode ??
-    subscriptionMember?.id ??
-    username;
   const lines: string[] = [pick(GREETINGS)(name, username), ""];
 
   const unpaidItems = record?.items.filter((item) => !item.paid) ?? [];
@@ -304,4 +296,67 @@ export async function buildOweMessage(
   }
 
   return lines.join("\n");
+}
+
+export async function buildOweMessage(
+  userId: number,
+  username: string,
+  firstName: string,
+): Promise<string | null> {
+  const [record, subscriptionMember, deposit] = await Promise.all([
+    resolveDebtForTelegramUser(userId, username),
+    resolveSubscriptionMemberForTelegramUser(userId, username),
+    resolveDepositForTelegramUser(userId, username),
+  ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(subscriptionMember.id)
+      : { total: 0, months: [] };
+
+  const name =
+    record?.name ??
+    firstName ??
+    record?.shortcode ??
+    subscriptionMember?.id ??
+    username;
+
+  return formatOweMessageLines({
+    record,
+    subscriptionMember,
+    ytOwing,
+    depositTotal: deposit ?? 0,
+    name,
+    username,
+  });
+}
+
+export async function buildOweMessageForShortcode(
+  shortcode: string,
+): Promise<string | null> {
+  const code = shortcode.toUpperCase();
+  const [record, subscriptionMember, depositTotal, telegramUsername] =
+    await Promise.all([
+      getDebtByShortcode(code),
+      getMemberByShortcode(code),
+      getDepositBalanceByShortcode(code),
+      getTelegramUsernameByShortcode(code),
+    ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(code)
+      : { total: 0, months: [] };
+
+  const username = telegramUsername ?? "";
+  const name = record?.name ?? code;
+
+  return formatOweMessageLines({
+    record,
+    subscriptionMember,
+    ytOwing,
+    depositTotal,
+    name,
+    username,
+  });
 }
