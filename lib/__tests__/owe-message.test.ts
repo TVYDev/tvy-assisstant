@@ -215,7 +215,7 @@ describe("buildOweMessage", () => {
     const result = await buildOweMessage(123, "user", "User");
     // one of the ALL_SETTLED messages — all contain zero-balance language
     expect(result).not.toBeNull();
-    expect(result).toMatch(/clean|settled|zero|nothing|empty|peace|debt-free|free|nada|even|square|spotless/i);
+    expect(result).toMatch(/clean|settled|zero|nothing|empty|peace|debt-free|free|nada|even|square|spotless|គ្មាន|ស្អាត/i);
   });
 
   it("uses username only when userId is 0", async () => {
