@@ -314,21 +314,140 @@ export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
   }));
 }
 
+export function namesByShortcodeFromUsers(
+  users: TelegramUserRow[],
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const u of users) {
+    if (!u.shortcode) continue;
+    map.set(
+      u.shortcode,
+      [u.first_name, u.last_name].filter(Boolean).join(" "),
+    );
+  }
+  return map;
+}
+
 export function buildReminderMessage(
   members: SubscriptionMember[],
   monthlyFee: number,
+  depositTotals: Map<string, number> = new Map(),
+  namesByCode: Map<string, string> = new Map(),
 ): string {
-  const lines: string[] = [`Each = $${monthlyFee.toFixed(2)}`, "====="];
+  type Row = {
+    id: string;
+    name: string;
+    months: number;
+    total: number;
+    deposit: number;
+    net: number;
+  };
+
+  const rows: Row[] = [];
+  let totalToPay = 0;
 
   for (const member of members) {
     if (member.unpaid_count === 0) continue;
-    if (member.unpaid_count === 1) {
-      lines.push(`⏳ ${member.id}`);
-    } else {
-      const total = (member.unpaid_count * monthlyFee).toFixed(2);
-      lines.push(`⏳ ${member.id} x ${member.unpaid_count} = ${total}`);
-    }
+    const total = member.unpaid_count * monthlyFee;
+    const deposit = depositTotals.get(member.id) ?? 0;
+    const net = Math.max(total - deposit, 0);
+    totalToPay += net;
+    rows.push({
+      id: member.id,
+      name: namesByCode.get(member.id) ?? "—",
+      months: member.unpaid_count,
+      total,
+      deposit,
+      net,
+    });
+  }
+
+  if (rows.length === 0) {
+    return "📺 YouTube: everyone's paid up! ✅";
+  }
+
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const padL = (s: string, w: number) =>
+    s.length >= w ? s : " ".repeat(w - s.length) + s;
+  const padR = (s: string, w: number) =>
+    s.length >= w ? s : s + " ".repeat(w - s.length);
+
+  const col = {
+    code: Math.max(4, ...rows.map((r) => r.id.length)),
+    name: Math.max(4, ...rows.map((r) => r.name.length), "Name".length),
+    mo: Math.max(2, String(Math.max(...rows.map((r) => r.months))).length),
+    total: Math.max(5, "Total".length),
+    deposit: Math.max(7, "Deposit".length),
+    toPay: Math.max(
+      6,
+      "Settled".length,
+      "To pay".length,
+      ...rows.map((r) =>
+        r.net === 0 && r.deposit > 0 ? "Settled".length : money(r.net).length,
+      ),
+    ),
+  };
+
+  const headers = [
+    padR("Code", col.code),
+    padR("Name", col.name),
+    padL("Mo", col.mo),
+    padL("Total", col.total),
+    padL("Deposit", col.deposit),
+    padL("To pay", col.toPay),
+  ];
+
+  const segment = (w: number) => "─".repeat(w + 2);
+  const border = (left: string, mid: string, right: string) =>
+    left +
+    [
+      col.code,
+      col.name,
+      col.mo,
+      col.total,
+      col.deposit,
+      col.toPay,
+    ]
+      .map(segment)
+      .join(mid) +
+    right;
+
+  const tableLines = [
+    border("┌", "┬", "┐"),
+    `│ ${headers.join(" │ ")} │`,
+    border("├", "┼", "┤"),
+    ...rows.map((r) => {
+      const toPayLabel =
+        r.net === 0 && r.deposit > 0 ? "Settled" : money(r.net);
+      const cells = [
+        padR(r.id, col.code),
+        padR(r.name, col.name),
+        padL(String(r.months), col.mo),
+        padL(money(r.total), col.total),
+        padL(money(r.deposit), col.deposit),
+        padL(toPayLabel, col.toPay),
+      ];
+      return `│ ${cells.join(" │ ")} │`;
+    }),
+    border("└", "┴", "┘"),
+  ];
+
+  const lines = [
+    `📺 YouTube payment reminder — ${money(monthlyFee)}/mo`,
+    "",
+    "<pre>" + tableLines.join("\n") + "</pre>",
+    "",
+    "Settled = covered by deposit",
+  ];
+
+  if (totalToPay > 0) {
+    lines.push(`<b>💵 Total to collect: ${money(totalToPay)}</b>`);
+  } else {
+    lines.push("<b>💵 Total to collect: $0.00</b> (all covered by deposits ✅)");
   }
 
   return lines.join("\n");
 }
+
+/** Telegram photo captions use HTML for reminder tables (`<pre>` monospace). */
+export const REMINDER_PARSE_MODE = "HTML" as const;
