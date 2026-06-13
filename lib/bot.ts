@@ -10,11 +10,8 @@ import {
   toggleYouTubeMonthPaid,
   bulkToggleYouTubeMonthsPaid,
   toggleAllYouTubeMonthsPaid,
-  buildReminderMessage,
-  REMINDER_PARSE_MODE,
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
-  getAllTelegramUsers,
 } from "./youtube-subscription";
 import {
   buildOweMessage,
@@ -30,7 +27,6 @@ import {
   cancelDebtItem,
   toggleDebtItemPaid,
   updateDebtItem,
-  getAllDebtRecords,
 } from "./debt";
 import {
   addDeposit,
@@ -38,20 +34,16 @@ import {
   InsufficientDepositError,
   getDepositBalanceByShortcode,
   getDepositTransactions,
-  getAllDepositTotals,
   resolveDepositForTelegramUser,
 } from "./deposit";
 import {
   getUnpaidYoutubeOwing,
-  getYoutubeReminderOwings,
   getYoutubeFeeSchedules,
   addYoutubeFeeSchedule,
   formatFeeScheduleLine,
-  getCurrentYoutubeMonthlyFee,
   resolveFeeForMonth,
   sumMonthCharges,
   isDateToken,
-  resolveYoutubeFeeAnnouncement,
 } from "./youtube-fee";
 import {
   parsePaymentTail,
@@ -59,11 +51,38 @@ import {
   formatPaymentSettlement,
   isMonthToken,
 } from "./payment-settlement";
+import {
+  buildAlloweSummary,
+  buildListUsersReply,
+  buildYtFeesReply,
+  sendYtReminderPreview,
+} from "./owner-replies";
+import {
+  registerBotCommands,
+  ownerMainMenuKeyboard,
+  ownerDebtMenuKeyboard,
+  ownerDepositMenuKeyboard,
+  ownerYtMenuKeyboard,
+  ownerUserMenuKeyboard,
+  ownerPreviewMenuKeyboard,
+  ownerBackMenuKeyboard,
+  OWNER_MENU_MAIN_TEXT,
+  OWNER_MENU_DEBT_TEXT,
+  OWNER_MENU_DEPOSIT_TEXT,
+  OWNER_MENU_YT_TEXT,
+  OWNER_MENU_USER_TEXT,
+  OWNER_MENU_PREVIEW_TEXT,
+  OWNER_MENU_HELP_TEXT,
+} from "./owner-menu";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
 
 const OWNER_ID = parseInt(process.env.OWNER_TELEGRAM_ID ?? "0");
+
+function isOwner(ctx: { from?: { id: number } }): boolean {
+  return OWNER_ID > 0 && ctx.from?.id === OWNER_ID;
+}
 
 const NOT_BOSS_REPLIES = [
   "Excuse me?? 🦕 I only take orders from ONE boss, and it ain't you!",
@@ -222,6 +241,10 @@ const YT_UNPAID_MSGS = [
 ];
 
 export const bot = new Bot(token);
+
+void registerBotCommands(bot.api, OWNER_ID).catch((err) => {
+  console.error("Failed to register Telegram commands:", err);
+});
 
 bot.command(
   [
@@ -1007,22 +1030,8 @@ bot.command("ytunpaidall", async (ctx) => {
 
 // Owner-only: /ytfees — list YouTube fee schedules
 bot.command("ytfees", async (ctx) => {
-  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
-    return notBossReply(ctx);
-  }
-
-  const schedules = await getYoutubeFeeSchedules();
-  if (!schedules.length) {
-    return ctx.reply("No YouTube fee schedules configured.");
-  }
-
-  const current = await getCurrentYoutubeMonthlyFee();
-  const lines = [
-    `📺 YouTube fee schedules (current month: $${current.toFixed(2)}/mo)`,
-    "",
-    ...schedules.map((s) => `  ${formatFeeScheduleLine(s)}`),
-  ];
-  return ctx.reply(lines.join("\n"));
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return ctx.reply(await buildYtFeesReply());
 });
 
 // Owner-only: /addytfee <amount> <from YYYY-MM-DD> [to YYYY-MM-DD]
@@ -1062,6 +1071,72 @@ bot.command("addytfee", async (ctx) => {
   }
 });
 
+// Owner-only: /menu — tap-to-run admin panel
+bot.command("menu", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return ctx.reply(OWNER_MENU_MAIN_TEXT, {
+    parse_mode: "HTML",
+    reply_markup: ownerMainMenuKeyboard(),
+  });
+});
+
+bot.callbackQuery(/^om:/, async (ctx) => {
+  if (!isOwner(ctx)) {
+    await ctx.answerCallbackQuery({ text: "Boss only!", show_alert: true });
+    return;
+  }
+
+  const data = ctx.callbackQuery.data;
+  await ctx.answerCallbackQuery();
+
+  const editSection = async (text: string, keyboard: ReturnType<typeof ownerMainMenuKeyboard>) => {
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+    } catch {
+      await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+    }
+  };
+
+  switch (data) {
+    case "om:main":
+      await editSection(OWNER_MENU_MAIN_TEXT, ownerMainMenuKeyboard());
+      break;
+    case "om:debt":
+      await editSection(OWNER_MENU_DEBT_TEXT, ownerDebtMenuKeyboard());
+      break;
+    case "om:dep":
+      await editSection(OWNER_MENU_DEPOSIT_TEXT, ownerDepositMenuKeyboard());
+      break;
+    case "om:yt":
+      await editSection(OWNER_MENU_YT_TEXT, ownerYtMenuKeyboard());
+      break;
+    case "om:user":
+      await editSection(OWNER_MENU_USER_TEXT, ownerUserMenuKeyboard());
+      break;
+    case "om:prev":
+      await editSection(OWNER_MENU_PREVIEW_TEXT, ownerPreviewMenuKeyboard());
+      break;
+    case "om:help":
+      await editSection(OWNER_MENU_HELP_TEXT, ownerBackMenuKeyboard());
+      break;
+    case "om:run:allowe":
+      await ctx.reply(await buildAlloweSummary());
+      break;
+    case "om:run:listusers":
+      await ctx.reply(await buildListUsersReply());
+      break;
+    case "om:run:ytfees":
+      await ctx.reply(await buildYtFeesReply());
+      break;
+    case "om:run:previewytreminder":
+      await sendYtReminderPreview(ctx);
+      break;
+  }
+});
+
 // Owner-only: /previewowe <shortcode> — preview /owe for a user by shortcode
 bot.command("previewowe", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -1087,101 +1162,14 @@ bot.command("previewowe", async (ctx) => {
 
 // Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat
 bot.command("previewytreminder", async (ctx) => {
-  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
-    return notBossReply(ctx);
-  }
-
-  const [owings, depositTotals, feeAnnouncement] = await Promise.all([
-    getYoutubeReminderOwings(),
-    getAllDepositTotals(),
-    resolveYoutubeFeeAnnouncement(),
-  ]);
-
-  const caption =
-    "🔍 <b>Preview</b> — same as the monthly cron (not posted to group)\n\n" +
-    buildReminderMessage(owings, depositTotals, {
-      feeAnnouncement: feeAnnouncement.text ?? undefined,
-    });
-
-  const qrPath = path.join(process.cwd(), "data", "qr.png");
-  const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-
-  return ctx.replyWithPhoto(file, {
-    caption,
-    parse_mode: REMINDER_PARSE_MODE,
-  });
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return sendYtReminderPreview(ctx);
 });
 
 // Owner-only: /allowe — summary of everyone who owes anything
 bot.command("allowe", async (ctx) => {
-  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
-    return notBossReply(ctx);
-  }
-
-  const [debtRecords, ytOwings, allUsers, depositTotals] = await Promise.all([
-    getAllDebtRecords(),
-    getYoutubeReminderOwings(),
-    getAllTelegramUsers(),
-    getAllDepositTotals(),
-  ]);
-
-  const debtMap = new Map(debtRecords.map((r) => [r.shortcode, r]));
-  const ytMap = new Map(ytOwings.map((o) => [o.id, o]));
-  const nameMap = new Map(
-    allUsers
-      .filter((u) => u.shortcode)
-      .map((u) => [
-        u.shortcode!,
-        [u.first_name, u.last_name].filter(Boolean).join(" "),
-      ]),
-  );
-
-  const allShortcodes = new Set([
-    ...debtMap.keys(),
-    ...ytMap.keys(),
-    ...depositTotals.keys(),
-  ]);
-
-  const lines: string[] = ["📊 Summary — everyone who owes", ""];
-  let grandTotal = 0;
-
-  for (const code of [...allShortcodes].sort()) {
-    const record = debtMap.get(code);
-    const ytOwing = ytMap.get(code);
-    const ytUnpaid = ytOwing?.months.length ?? 0;
-    const unpaidDebt = record
-      ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
-      : 0;
-    const ytTotal = ytOwing?.total ?? 0;
-    const deposit = depositTotals.get(code) ?? 0;
-    const grossTotal = unpaidDebt + ytTotal;
-    const netTotal = calculateNetOwed({
-      owes_me: unpaidDebt,
-      i_owe: 0,
-      deposit,
-      subOwed: ytTotal,
-    });
-
-    if (netTotal <= 0) continue;
-    grandTotal += netTotal;
-
-    const name = record?.name ?? nameMap.get(code) ?? code;
-    lines.push(`👤 ${code} (${name}) — $${netTotal.toFixed(2)} net`);
-    if (unpaidDebt > 0) lines.push(`  💸 General: $${unpaidDebt.toFixed(2)}`);
-    if (ytUnpaid > 0)
-      lines.push(`  📺 YouTube: ${ytUnpaid} month(s) = $${ytTotal.toFixed(2)}`);
-    if (deposit > 0) lines.push(`  💰 Deposit: -$${deposit.toFixed(2)}`);
-    lines.push("");
-  }
-
-  if (lines.length === 2) {
-    lines.push("Everyone is settled up!! We love to see it 🦕✨");
-  } else {
-    lines.push("");
-    lines.push(`💰 Combined damage: $${grandTotal.toFixed(2)} 😅`);
-  }
-
-  return ctx.reply(lines.join("\n"));
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return ctx.reply(await buildAlloweSummary());
 });
 
 // Owner-only: /updateuser <shortcode> <field> <value>
@@ -1243,23 +1231,8 @@ bot.command("updateuser", async (ctx) => {
 
 // Owner-only: /listusers — show all telegram_users
 bot.command("listusers", async (ctx) => {
-  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
-    return notBossReply(ctx);
-  }
-
-  const users = await getAllTelegramUsers();
-  if (users.length === 0)
-    return ctx.reply("🤔 No users found in the database yet.");
-
-  const lines = users.map((u) => {
-    const name = [u.first_name, u.last_name].filter(Boolean).join(" ");
-    const username = u.telegram_username ? ` @${u.telegram_username}` : "";
-    const id = u.telegram_user_id ? ` [${u.telegram_user_id}]` : " [no ID]";
-    const code = u.shortcode ? `[${u.shortcode}]` : "[no shortcode]";
-    return `${code} ${name}${username}${id}`;
-  });
-
-  return ctx.reply(`👥 All users (${users.length}):\n\n` + lines.join("\n"));
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return ctx.reply(await buildListUsersReply());
 });
 
 // Owner-only: /help — list all commands
@@ -1278,6 +1251,8 @@ bot.command("help", async (ctx) => {
 
   return ctx.reply(
     "📖 All commands:\n" +
+      "\n" +
+      "🦕 Tip: type /menu for the button panel\n" +
       "\n" +
       "👤 Public:\n" +
       "  /owe — check your balance\n" +
@@ -1337,6 +1312,8 @@ bot.command("help", async (ctx) => {
       "    → Preview monthly YouTube reminder (QR + list) in this chat\n" +
       "  /previewowe <shortcode>\n" +
       "    → Preview /owe message for a user by shortcode\n" +
+      "  /menu\n" +
+      "    → Admin button menu (owner only)\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +
