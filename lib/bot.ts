@@ -18,6 +18,7 @@ import {
 } from "./youtube-subscription";
 import {
   buildOweMessage,
+  calculateNetOwed,
   resolveDebtForTelegramUser,
   resolveSubscriptionMemberForTelegramUser,
 } from "./owe-message";
@@ -30,6 +31,21 @@ import {
   updateDebtItem,
   getAllDebtRecords,
 } from "./debt";
+import {
+  addDeposit,
+  reduceDeposit,
+  InsufficientDepositError,
+  getDepositBalanceByShortcode,
+  getDepositTransactions,
+  getAllDepositTotals,
+  resolveDepositForTelegramUser,
+} from "./deposit";
+import {
+  parsePaymentTail,
+  settlePayment,
+  formatPaymentSettlement,
+  isMonthToken,
+} from "./payment-settlement";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
@@ -50,6 +66,18 @@ function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   const msg =
     NOT_BOSS_REPLIES[Math.floor(Math.random() * NOT_BOSS_REPLIES.length)];
   return ctx.reply(msg);
+}
+
+async function countUnpaidYouTubeMonths(
+  shortcode: string,
+  monthFilters?: string[],
+): Promise<number> {
+  const months = await getYouTubeMonthsForShortcode(shortcode);
+  const unpaid = months.filter((m) => !m.paid);
+  if (!monthFilters?.length) return unpaid.length;
+  return unpaid.filter((m) =>
+    monthFilters.some((f) => m.month.startsWith(f)),
+  ).length;
 }
 
 function pick<T>(arr: T[]): T {
@@ -197,16 +225,20 @@ bot.command("qr", async (ctx) => {
   const username = ctx.from?.username ?? "";
   const firstName = ctx.from?.first_name ?? "friend";
 
-  const [record, member, monthlyFee] = await Promise.all([
+  const [record, member, monthlyFee, deposit] = await Promise.all([
     resolveDebtForTelegramUser(userId, username),
     resolveSubscriptionMemberForTelegramUser(userId, username),
     getConfig("youtube_monthly_fee").then(parseFloat),
+    resolveDepositForTelegramUser(userId, username),
   ]);
 
-  const debtOwesMe = record?.owes_me ?? 0;
-  const subOwed =
-    member && member.unpaid_count > 0 ? member.unpaid_count * monthlyFee : 0;
-  const net = debtOwesMe + subOwed - (record?.i_owe ?? 0);
+  const net = calculateNetOwed({
+    owes_me: record?.owes_me ?? 0,
+    i_owe: record?.i_owe ?? 0,
+    deposit,
+    subOwed:
+      member && member.unpaid_count > 0 ? member.unpaid_count * monthlyFee : 0,
+  });
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
@@ -267,6 +299,127 @@ bot.command("adddebt", async (ctx) => {
   );
 });
 
+// Owner-only: /adddeposit <shortcode> <amount>
+// Example: /adddeposit BSR 20
+bot.command("adddeposit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  const parts = args.match(/^(\S+)\s+([\d.]+)$/);
+
+  if (!parts) {
+    return ctx.reply(
+      "Usage: /adddeposit <shortcode> <amount>\nExample: /adddeposit BSR 20",
+    );
+  }
+
+  const [, shortcode, amountStr] = parts;
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) {
+    return ctx.reply("Amount must be a positive number.");
+  }
+
+  const totalDeposit = await addDeposit(shortcode, amount);
+  return ctx.reply(
+    `💰 Deposit added! ${shortcode.toUpperCase()} balance is now $${totalDeposit.toFixed(2)}.`,
+  );
+});
+
+// Owner-only: /reducedeposit <shortcode> <amount> [note]
+// Example: /reducedeposit BSR 15 Applied to lunch debt
+bot.command("reducedeposit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  const parts = args.match(/^(\S+)\s+([\d.]+)(?:\s+(.+))?$/);
+
+  if (!parts) {
+    return ctx.reply(
+      "Usage: /reducedeposit <shortcode> <amount> [note]\nExample: /reducedeposit BSR 15 Applied to lunch debt",
+    );
+  }
+
+  const [, shortcode, amountStr, note] = parts;
+  const amount = parseFloat(amountStr);
+
+  if (isNaN(amount) || amount <= 0) {
+    return ctx.reply("Amount must be a positive number.");
+  }
+
+  try {
+    const balance = await reduceDeposit(shortcode, amount, note?.trim());
+    const noteLine = note?.trim() ? `\nNote: ${note.trim()}` : "";
+    return ctx.reply(
+      `📉 Deposit reduced by $${amount.toFixed(2)} for ${shortcode.toUpperCase()}.${noteLine}\nRemaining balance: $${balance.toFixed(2)}`,
+    );
+  } catch (err) {
+    if (err instanceof InsufficientDepositError) {
+      return ctx.reply(`❌ ${err.message}`);
+    }
+    throw err;
+  }
+});
+
+// Owner-only: /deposits <shortcode>
+bot.command("deposits", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const shortcode = ctx.match?.trim().toUpperCase();
+  if (!shortcode) {
+    return ctx.reply("Usage: /deposits <shortcode>\nExample: /deposits BSR");
+  }
+
+  const [balance, transactions] = await Promise.all([
+    getDepositBalanceByShortcode(shortcode),
+    getDepositTransactions(shortcode),
+  ]);
+
+  const lines: string[] = [
+    `💰 Deposits for ${shortcode}`,
+    `Current balance: $${balance.toFixed(2)}`,
+    "",
+  ];
+
+  const reductions = transactions.filter((t) => t.type === "reduce");
+  if (reductions.length > 0) {
+    lines.push("📉 Reduction history:");
+    for (const tx of reductions) {
+      const date = tx.created_at.slice(0, 10);
+      const note = tx.note ? ` — ${tx.note}` : "";
+      lines.push(
+        `  • -$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} left${note}`,
+      );
+    }
+    lines.push("");
+  } else {
+    lines.push("📉 No reductions yet.");
+    lines.push("");
+  }
+
+  const additions = transactions.filter((t) => t.type === "add");
+  if (additions.length > 0) {
+    lines.push("📈 Add history:");
+    for (const tx of additions) {
+      const date = tx.created_at.slice(0, 10);
+      const note = tx.note ? ` — ${tx.note}` : "";
+      lines.push(
+        `  • +$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} total${note}`,
+      );
+    }
+  } else {
+    lines.push("📈 No deposits added yet.");
+  }
+
+  return ctx.reply(lines.join("\n"));
+});
+
 // Owner-only: /debts <shortcode>
 bot.command("debts", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -277,10 +430,11 @@ bot.command("debts", async (ctx) => {
   if (!shortcode)
     return ctx.reply("Usage: /debts <shortcode>\nExample: /debts BSR");
 
-  const [record, ytMember, monthlyFee] = await Promise.all([
+  const [record, ytMember, monthlyFee, deposit] = await Promise.all([
     getDebtByShortcode(shortcode),
     getMemberByShortcode(shortcode),
     getConfig("youtube_monthly_fee").then(parseFloat),
+    getDepositBalanceByShortcode(shortcode),
   ]);
 
   // Only fetch YouTube months if they're actually a subscription member
@@ -329,9 +483,21 @@ bot.command("debts", async (ctx) => {
     ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
     : 0;
   const unpaidYt = ytMonths.filter((m) => !m.paid).length * monthlyFee;
-  const total = unpaidDebt + unpaidYt;
+  const grossTotal = unpaidDebt + unpaidYt;
+  const netTotal = calculateNetOwed({
+    owes_me: unpaidDebt,
+    i_owe: 0,
+    deposit,
+    subOwed: unpaidYt,
+  });
   lines.push("");
-  lines.push(`💰 Total owed: $${total.toFixed(2)}`);
+  if (deposit > 0) {
+    lines.push(`💰 Deposit on file: $${deposit.toFixed(2)}`);
+  }
+  lines.push(`💰 Total owed: $${grossTotal.toFixed(2)}`);
+  if (deposit > 0) {
+    lines.push(`💰 Net owed (after deposit): $${netTotal.toFixed(2)}`);
+  }
 
   return ctx.reply(lines.join("\n"));
 });
@@ -342,12 +508,48 @@ bot.command("paid", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const shortcode = ctx.match?.trim().toUpperCase();
-  if (!shortcode)
-    return ctx.reply("Usage: /paid <shortcode>\nExample: /paid BSR");
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
+  if (parts.length < 1) {
+    return ctx.reply(
+      "Usage: /paid <shortcode> [amount|deposit]\n" +
+        "  /paid BSR — clear all, deposit unchanged\n" +
+        "  /paid BSR 50 — record $50 received, then clear all\n" +
+        "  /paid BSR deposit — clear all using deposit only",
+    );
+  }
+
+  const shortcode = parts[0].toUpperCase();
+  const { tail } = parsePaymentTail(parts.slice(1));
+
+  const [record, ytMonths, monthlyFee] = await Promise.all([
+    getDebtByShortcode(shortcode),
+    getYouTubeMonthsForShortcode(shortcode),
+    getConfig("youtube_monthly_fee").then(parseFloat),
+  ]);
+
+  const unpaidDebt = record
+    ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
+    : 0;
+  const unpaidYtCount = ytMonths.filter((m) => !m.paid).length;
+  const paymentTotal = unpaidDebt + unpaidYtCount * monthlyFee;
 
   await Promise.all([markAllPaid(shortcode), markYouTubePaid(shortcode)]);
-  return ctx.reply(`🧹 All wiped! ${shortcode} is clean now — fresh start! 🎉`);
+
+  try {
+    const settlement = await settlePayment(
+      shortcode,
+      paymentTotal,
+      tail,
+      `Paid: cleared all debts and YouTube for ${shortcode}`,
+    );
+    return ctx.reply(
+      `🧹 All wiped! ${shortcode} is clean now — fresh start! 🎉${formatPaymentSettlement(settlement.added, settlement.applied, settlement.balance)}`,
+    );
+  } catch (err) {
+    return ctx.reply(
+      `🧹 All wiped for ${shortcode}, but deposit step failed: ${(err as Error).message}`,
+    );
+  }
 });
 
 // Owner-only: /updatedebt <item_id> <new_amount> <new_description> — correct a debt entry
@@ -404,13 +606,42 @@ bot.command("debtpaid", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
-  const itemId = parseInt(ctx.match?.trim() ?? "");
-  if (isNaN(itemId))
-    return ctx.reply("Usage: /debtpaid <item_id>\nExample: /debtpaid 5");
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
+  const itemId = parseInt(parts[0] ?? "");
+  if (isNaN(itemId)) {
+    return ctx.reply(
+      "Usage: /debtpaid <item_id> [amount|deposit]\n" +
+        "  /debtpaid 5 — mark paid, deposit unchanged\n" +
+        "  /debtpaid 5 25 — record $25 received, then settle debt\n" +
+        "  /debtpaid 5 deposit — settle from deposit only",
+    );
+  }
+
+  const { tail } = parsePaymentTail(parts.slice(1));
   const result = await toggleDebtItemPaid(itemId, true);
   if (!result) return ctx.reply(`No debt item found with ID #${itemId}.`);
+
+  let settlementSuffix = "";
+  if (result.newlyPaid) {
+    try {
+      const settlement = await settlePayment(
+        result.shortcode,
+        result.amount,
+        tail,
+        `Debt #${itemId} paid`,
+      );
+      settlementSuffix = formatPaymentSettlement(
+        settlement.added,
+        settlement.applied,
+        settlement.balance,
+      );
+    } catch (err) {
+      settlementSuffix = `\n⚠️ Marked paid, but deposit step failed: ${(err as Error).message}`;
+    }
+  }
+
   return ctx.reply(
-    `✅ Marked #${itemId} ($${result.amount.toFixed(2)}) as paid for ${result.shortcode}. They came through! 🙌`,
+    `✅ Marked #${itemId} ($${result.amount.toFixed(2)}) as paid for ${result.shortcode}. They came through! 🙌${settlementSuffix}`,
   );
 });
 
@@ -476,34 +707,89 @@ bot.command("ytpaid", async (ctx) => {
     return notBossReply(ctx);
   }
   const parts = (ctx.match?.trim() ?? "").split(/\s+/);
-  if (parts.length < 2)
+  if (parts.length < 2) {
     return ctx.reply(
-      "Usage: /ytpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\nExample: /ytpaid PVS 2026-04\nExample: /ytpaid PVS 2026-01 2026-02 2026-03",
+      "Usage: /ytpaid <shortcode> <YYYY-MM> [YYYY-MM ...] [amount|deposit]\n" +
+        "  /ytpaid BSR 2026-04 — mark paid, deposit unchanged\n" +
+        "  /ytpaid BSR 2026-04 1.19 — record $1.19 received, then settle month\n" +
+        "  /ytpaid BSR 2026-04 deposit — settle from deposit only",
     );
-  const [shortcode, ...months] = parts;
+  }
+
+  const [shortcode, ...rest] = parts;
+  const code = shortcode.toUpperCase();
+  const { leading: months, tail } = parsePaymentTail(rest);
+
+  if (months.length === 0) {
+    return ctx.reply("Provide at least one month (YYYY-MM).");
+  }
+  if (!months.every(isMonthToken)) {
+    return ctx.reply("Month values must be YYYY-MM (e.g. 2026-04).");
+  }
+
+  const monthlyFee = await getConfig("youtube_monthly_fee").then(parseFloat);
+  const unpaidCount = await countUnpaidYouTubeMonths(code, months);
+  const paymentTotal = unpaidCount * monthlyFee;
+  const settlementNote =
+    months.length === 1
+      ? `YouTube ${months[0]}`
+      : `YouTube ${months.join(", ")}`;
 
   if (months.length === 1) {
     const result = await toggleYouTubeMonthPaid(shortcode, months[0], true);
-    if (!result)
-      return ctx.reply(
-        `No YouTube month found for ${shortcode.toUpperCase()} ${months[0]}.`,
+    if (!result) {
+      return ctx.reply(`No YouTube month found for ${code} ${months[0]}.`);
+    }
+
+    let settlementSuffix = "";
+    try {
+      const settlement = await settlePayment(
+        code,
+        paymentTotal,
+        tail,
+        settlementNote,
       );
+      settlementSuffix = formatPaymentSettlement(
+        settlement.added,
+        settlement.applied,
+        settlement.balance,
+      );
+    } catch (err) {
+      settlementSuffix = `\n⚠️ Marked paid, but deposit step failed: ${(err as Error).message}`;
+    }
+
     await ctx.reply(
-      `✅ ${result.shortcode} ${result.month.slice(0, 7)} marked as paid.`,
+      `✅ ${result.shortcode} ${result.month.slice(0, 7)} marked as paid.${settlementSuffix}`,
     );
     await notifyYtGroup(result.shortcode, result.month.slice(0, 7), true);
     return;
   }
 
-  // Multiple months
   const results = await bulkToggleYouTubeMonthsPaid(shortcode, months, true);
-  if (!results.length)
-    return ctx.reply(
-      `No matching months found for ${shortcode.toUpperCase()}.`,
+  if (!results.length) {
+    return ctx.reply(`No matching months found for ${code}.`);
+  }
+
+  let settlementSuffix = "";
+  try {
+    const settlement = await settlePayment(
+      code,
+      paymentTotal,
+      tail,
+      settlementNote,
     );
+    settlementSuffix = formatPaymentSettlement(
+      settlement.added,
+      settlement.applied,
+      settlement.balance,
+    );
+  } catch (err) {
+    settlementSuffix = `\n⚠️ Marked paid, but deposit step failed: ${(err as Error).message}`;
+  }
+
   const updated = results.map((r) => r.month.slice(0, 7)).join(", ");
   await ctx.reply(
-    `✅ Marked ${results.length} month(s) as paid for ${shortcode.toUpperCase()}:\n${updated}`,
+    `✅ Marked ${results.length} month(s) as paid for ${code}:\n${updated}${settlementSuffix}`,
   );
   await notifyYtGroupBulk(
     results[0].shortcode,
@@ -561,15 +847,48 @@ bot.command("ytpaidall", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return notBossReply(ctx);
   }
-  const shortcode = ctx.match?.trim().toUpperCase();
-  if (!shortcode)
-    return ctx.reply("Usage: /ytpaidall <shortcode>\nExample: /ytpaidall PVS");
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/);
+  if (parts.length < 1) {
+    return ctx.reply(
+      "Usage: /ytpaidall <shortcode> [amount|deposit]\n" +
+        "  /ytpaidall BSR — mark all paid, deposit unchanged\n" +
+        "  /ytpaidall BSR 10 — record $10 received, then settle all months\n" +
+        "  /ytpaidall BSR deposit — settle all from deposit only",
+    );
+  }
+
+  const shortcode = parts[0].toUpperCase();
+  const { tail } = parsePaymentTail(parts.slice(1));
+
+  const [unpaidCount, monthlyFee] = await Promise.all([
+    countUnpaidYouTubeMonths(shortcode),
+    getConfig("youtube_monthly_fee").then(parseFloat),
+  ]);
 
   const results = await toggleAllYouTubeMonthsPaid(shortcode, true);
-  if (!results.length)
+  if (!results.length) {
     return ctx.reply(`No YouTube months found for ${shortcode}.`);
+  }
+
+  let settlementSuffix = "";
+  try {
+    const settlement = await settlePayment(
+      shortcode,
+      unpaidCount * monthlyFee,
+      tail,
+      `YouTube all months for ${shortcode}`,
+    );
+    settlementSuffix = formatPaymentSettlement(
+      settlement.added,
+      settlement.applied,
+      settlement.balance,
+    );
+  } catch (err) {
+    settlementSuffix = `\n⚠️ Marked paid, but deposit step failed: ${(err as Error).message}`;
+  }
+
   await ctx.reply(
-    `✅ All ${results.length} month(s) for ${shortcode} marked as paid! 🎉`,
+    `✅ All ${results.length} month(s) for ${shortcode} marked as paid! 🎉${settlementSuffix}`,
   );
   await notifyYtGroupBulk(
     results[0].shortcode,
@@ -610,12 +929,14 @@ bot.command("allowe", async (ctx) => {
     return notBossReply(ctx);
   }
 
-  const [debtRecords, ytMembers, monthlyFee, allUsers] = await Promise.all([
-    getAllDebtRecords(),
-    getUnpaidMonthCountsAll(),
-    getConfig("youtube_monthly_fee").then(parseFloat),
-    getAllTelegramUsers(),
-  ]);
+  const [debtRecords, ytMembers, monthlyFee, allUsers, depositTotals] =
+    await Promise.all([
+      getAllDebtRecords(),
+      getUnpaidMonthCountsAll(),
+      getConfig("youtube_monthly_fee").then(parseFloat),
+      getAllTelegramUsers(),
+      getAllDepositTotals(),
+    ]);
 
   const debtMap = new Map(debtRecords.map((r) => [r.shortcode, r]));
   const ytMap = new Map(ytMembers.map((m) => [m.id, m.unpaid_count]));
@@ -628,8 +949,11 @@ bot.command("allowe", async (ctx) => {
       ]),
   );
 
-  // Collect all shortcodes from both sources
-  const allShortcodes = new Set([...debtMap.keys(), ...ytMap.keys()]);
+  const allShortcodes = new Set([
+    ...debtMap.keys(),
+    ...ytMap.keys(),
+    ...depositTotals.keys(),
+  ]);
 
   const lines: string[] = ["📊 Summary — everyone who owes", ""];
   let grandTotal = 0;
@@ -641,16 +965,24 @@ bot.command("allowe", async (ctx) => {
       ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
       : 0;
     const ytTotal = ytUnpaid * monthlyFee;
-    const total = unpaidDebt + ytTotal;
+    const deposit = depositTotals.get(code) ?? 0;
+    const grossTotal = unpaidDebt + ytTotal;
+    const netTotal = calculateNetOwed({
+      owes_me: unpaidDebt,
+      i_owe: 0,
+      deposit,
+      subOwed: ytTotal,
+    });
 
-    if (total === 0) continue;
-    grandTotal += total;
+    if (netTotal <= 0) continue;
+    grandTotal += netTotal;
 
     const name = record?.name ?? nameMap.get(code) ?? code;
-    lines.push(`👤 ${code} (${name}) — $${total.toFixed(2)} total`);
+    lines.push(`👤 ${code} (${name}) — $${netTotal.toFixed(2)} net`);
     if (unpaidDebt > 0) lines.push(`  💸 General: $${unpaidDebt.toFixed(2)}`);
     if (ytUnpaid > 0)
       lines.push(`  📺 YouTube: ${ytUnpaid} month(s) = $${ytTotal.toFixed(2)}`);
+    if (deposit > 0) lines.push(`  💰 Deposit: -$${deposit.toFixed(2)}`);
     lines.push("");
   }
 
@@ -769,6 +1101,15 @@ bot.command("help", async (ctx) => {
       "  /adddebt <shortcode> <amount> <desc>\n" +
       "    → Add a debt item for someone\n" +
       "    → e.g. /adddebt BSR 15.50 Lunch\n" +
+      "  /adddeposit <shortcode> <amount>\n" +
+      "    → Add to someone's deposit balance\n" +
+      "    → e.g. /adddeposit BSR 20\n" +
+      "  /reducedeposit <shortcode> <amount> [note]\n" +
+      "    → Reduce deposit balance (logged in history)\n" +
+      "    → e.g. /reducedeposit BSR 15 Applied to lunch\n" +
+      "  /deposits <shortcode>\n" +
+      "    → View current balance + add/reduce history\n" +
+      "    → e.g. /deposits BSR\n" +
       "  /updatedebt <item_id> <amount> <desc>\n" +
       "    → Correct an existing debt item\n" +
       "    → e.g. /updatedebt 12 20.00 Dinner\n" +
@@ -776,24 +1117,28 @@ bot.command("help", async (ctx) => {
       "    → View unpaid debts + YouTube for someone\n" +
       "  /allowe\n" +
       "    → Summary of everyone who owes\n" +
-      "  /paid <shortcode>\n" +
-      "    → Clear ALL debts + YouTube for someone\n" +
+      "  /paid <shortcode> [amount|deposit]\n" +
+      "    → Clear ALL debts + YouTube\n" +
+      "    → no extra args: deposit unchanged\n" +
+      "    → amount: record cash received, then settle\n" +
+      "    → deposit: settle from deposit only\n" +
       "  /canceldebt <item_id>\n" +
       "    → Remove a specific debt item\n" +
-      "  /debtpaid <item_id>\n" +
-      "    → Mark a debt item as paid\n" +
+      "  /debtpaid <item_id> [amount|deposit]\n" +
+      "    → Mark debt paid; optional amount or deposit\n" +
+      "    → e.g. /debtpaid 5 25 or /debtpaid 5 deposit\n" +
       "  /debtunpaid <item_id>\n" +
       "    → Mark a debt item as unpaid\n" +
       "\n" +
       "📺 YouTube subscription:\n" +
-      "  /ytpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\n" +
-      "    → Mark one or more months as paid (1 group notification)\n" +
-      "    → e.g. /ytpaid PVS 2026-04\n" +
-      "    → e.g. /ytpaid PVS 2026-01 2026-02 2026-03\n" +
+      "  /ytpaid <shortcode> <YYYY-MM> [...] [amount|deposit]\n" +
+      "    → Mark month(s) paid; optional amount or deposit\n" +
+      "    → e.g. /ytpaid BSR 2026-04 1.19\n" +
+      "    → e.g. /ytpaid BSR 2026-04 deposit\n" +
       "  /ytunpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\n" +
       "    → Mark one or more months as unpaid (1 group notification)\n" +
-      "  /ytpaidall <shortcode>\n" +
-      "    → Mark ALL months as paid (1 group notification)\n" +
+      "  /ytpaidall <shortcode> [amount|deposit]\n" +
+      "    → Mark ALL months paid; optional amount or deposit\n" +
       "  /ytunpaidall <shortcode>\n" +
       "    → Mark ALL months as unpaid (1 group notification)\n" +
       "\n" +

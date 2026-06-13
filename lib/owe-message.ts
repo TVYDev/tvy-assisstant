@@ -1,5 +1,6 @@
 import type { DebtRecord } from "./debt";
 import { getDebtByUsername, getDebtByUserId } from "./debt";
+import { resolveDepositForTelegramUser } from "./deposit";
 import type { SubscriptionMember } from "./youtube-subscription";
 import {
   getMemberByTelegramIdentity,
@@ -96,18 +97,30 @@ const ALL_SETTLED = [
   "💚 Nothing owed, nothing due. Clean money, clean conscience! 😇",
 ];
 
+export function calculateNetOwed(params: {
+  owes_me: number;
+  i_owe: number;
+  deposit: number;
+  subOwed: number;
+}): number {
+  return params.owes_me + params.subOwed - params.i_owe - params.deposit;
+}
+
 export async function buildOweMessage(
   userId: number,
   username: string,
   firstName: string,
 ): Promise<string | null> {
-  const [record, subscriptionMember, monthlyFee] = await Promise.all([
+  const [record, subscriptionMember, monthlyFee, deposit] = await Promise.all([
     resolveDebtForTelegramUser(userId, username),
     resolveSubscriptionMemberForTelegramUser(userId, username),
     getConfig("youtube_monthly_fee").then(parseFloat),
+    resolveDepositForTelegramUser(userId, username),
   ]);
 
-  if (!record && !subscriptionMember) return null;
+  const depositTotal = deposit ?? 0;
+
+  if (!record && !subscriptionMember && depositTotal === 0) return null;
 
   const name =
     record?.name ??
@@ -150,7 +163,18 @@ export async function buildOweMessage(
     subscriptionMember && subscriptionMember.unpaid_count > 0
       ? subscriptionMember.unpaid_count * monthlyFee
       : 0;
-  const net = debtOwesMe + subOwed - debtIOwe;
+
+  if (depositTotal > 0) {
+    lines.push("");
+    lines.push(`💰 Your deposit with Vannyou: $${depositTotal.toFixed(2)}`);
+  }
+
+  const net = calculateNetOwed({
+    owes_me: debtOwesMe,
+    i_owe: debtIOwe,
+    deposit: depositTotal,
+    subOwed,
+  });
 
   lines.push("");
   if (net > 0) {

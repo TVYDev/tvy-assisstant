@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { mockResolveDepositForTelegramUser } = vi.hoisted(() => ({
+  mockResolveDepositForTelegramUser: vi.fn().mockResolvedValue(0),
+}));
+
 // ── Mock dependencies ─────────────────────────────────────────────────────────
 
 vi.mock("../debt", () => ({
@@ -13,6 +17,10 @@ vi.mock("../youtube-subscription", () => ({
   getConfig: vi.fn(),
 }));
 
+vi.mock("../deposit", () => ({
+  resolveDepositForTelegramUser: mockResolveDepositForTelegramUser,
+}));
+
 import { buildOweMessage } from "../owe-message";
 import { getDebtByUserId, getDebtByUsername } from "../debt";
 import {
@@ -20,7 +28,6 @@ import {
   getMemberByUsername,
   getConfig,
 } from "../youtube-subscription";
-
 const mockGetDebtByUserId = vi.mocked(getDebtByUserId);
 const mockGetDebtByUsername = vi.mocked(getDebtByUsername);
 const mockGetMemberByTelegramIdentity = vi.mocked(getMemberByTelegramIdentity);
@@ -59,6 +66,7 @@ function ytMember(unpaid_count = 2) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetConfig.mockResolvedValue(MONTHLY_FEE);
+  mockResolveDepositForTelegramUser.mockResolvedValue(0);
 });
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -188,6 +196,18 @@ describe("buildOweMessage", () => {
     expect(mockGetDebtByUserId).not.toHaveBeenCalled();
     expect(mockGetMemberByTelegramIdentity).not.toHaveBeenCalled();
     expect(result).toContain("$25.00");
+  });
+
+  it("reduces net owed when user has a deposit", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(debtRecord({ owes_me: 50 }));
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
+    mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
+    mockResolveDepositForTelegramUser.mockResolvedValue(20);
+
+    const result = await buildOweMessage(123, "user", "User");
+    expect(result).toContain("Your deposit with Vannyou: $20.00");
+    expect(result).toContain("$30.00");
   });
 
   it("uses userId only when username is empty", async () => {

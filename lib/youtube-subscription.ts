@@ -54,6 +54,14 @@ export async function updateTelegramUserField(
         .update({ shortcode: newCode })
         .eq("shortcode", code),
       supabase
+        .from("deposit_balances")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
+        .from("deposit_transactions")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
         .from("youtube_subscription_months")
         .update({ shortcode: newCode })
         .eq("shortcode", code),
