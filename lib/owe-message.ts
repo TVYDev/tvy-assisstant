@@ -81,13 +81,76 @@ const NET_OWE_ME = [
     `🧾 Tab total: $${amount} owed to Vannyou. The QR code is waiting for you! 😂`,
 ];
 
+const I_OWE_THEM = [
+  (amount: string) =>
+    `🤑 Vannyou owes you: $${amount} — Dino marked this as a rare boss L. Go collect!`,
+  (amount: string) =>
+    `👑 Boss debt alert: Vannyou owes you $${amount}. Dino had to fan himself after reading this.`,
+  (amount: string) =>
+    `🦄 Unicorn moment: Vannyou is down $${amount} with you. Dino recommends screenshot evidence.`,
+  (amount: string) =>
+    `📉 Vannyou tab: -$${amount} (yes, negative). Dino is as shocked as you are.`,
+  (amount: string) =>
+    `🎰 Jackpot? Vannyou owes you $${amount}. Dino has never seen this energy before. 😂`,
+  (amount: string) =>
+    `🦕 Historic ledger entry: Vannyou owes you $${amount}. Nailong approves this chaos.`,
+];
+
+const DEPOSIT_ON_FILE = [
+  (amount: string) => `💰 Your deposit with Vannyou: $${amount}`,
+  (amount: string) => `💰 Prepaid credit on file: $${amount} (Dino is guarding it 🦕)`,
+  (amount: string) => `💰 You've got $${amount} sitting with Vannyou like a VIP tab`,
+  (amount: string) => `💰 Deposit balance: $${amount} — your money, his problem 😌`,
+  (amount: string) => `💰 $${amount} in your Vannyou wallet. Not debt. Power move.`,
+  (amount: string) => `💰 Credit available: $${amount}. Dino notes you planned ahead 👀`,
+];
+
+const RARE_VANNYOU_OWES_YOU = [
+  "🚨 RARE EVENT DETECTED 🦕 Dino ran the numbers three times. Same result. Vannyou owes YOU money. This is not a drill.",
+  "🦄 Hold up. Dino has been doing this job for a while and this almost never happens. Vannyou is in the red with you. Screenshot it. 📸",
+  "🦕 Dino had to sit down for this one. Vannyou owing someone? Statistically rarer than a paid YouTube month on day one. 😂",
+  "⚠️ Breaking: local dino discovers Vannyou owes a human money. Scientists are confused. Vannyou is probably confused too.",
+  "🎰 You just hit the rarest outcome on Dino's ledger slot machine. Vannyou owes YOU. Frame this message. Put it in a museum.",
+  "🦖 Alert level: mythical. Vannyou owing you is like seeing Nailong skip a meal — technically possible, deeply suspicious.",
+  "🛸 Dino is filing this under 'unnatural events'. Vannyou owing you should come with background music.",
+  "📯 Dino blew the rare-event trumpet 🎺 Vannyou owes YOU. Witnesses recommended.",
+  "🧪 Lab result: 99.9% of tabs end with you owing Vannyou. You got the 0.1%. Enjoy responsibly.",
+  "🦕 Dino refreshed the page. Still true. Vannyou owes you. Reality is buffering.",
+  "🏆 Achievement unlocked: Make Vannyou Owe You. Dino is emotionally unprepared.",
+  "🌋 Financial volcano status: dormant for years, erupted today. Vannyou owes YOU.",
+  "🎪 Welcome to the circus. Main attraction: Vannyou in debt to a regular human.",
+  "🦖 Dino checked with management. Management (Vannyou) is also surprised.",
+];
+
 const NET_I_OWE = [
   (amount: string) =>
-    `🤑 Bottom line: Vannyou owes you $${amount} — go chase him! 🏃`,
+    `🤑 Bottom line: Vannyou owes you $${amount}. Go collect before physics corrects itself! 🏃`,
   (amount: string) =>
-    `💰 Vannyou is in the red with you — he owes $${amount}. Go collect! 😤`,
+    `💰 Plot twist of the century: Vannyou owes you $${amount}. Dino still doesn't trust it. 👀`,
   (amount: string) =>
-    `🎊 Good news! Vannyou owes YOU $${amount}. Time to hunt him down! 🏃💨`,
+    `🎊 Impossible-ish news! Vannyou owes YOU $${amount}. Hunt him down while the timeline is still valid! 🏃💨`,
+  (amount: string) =>
+    `🦄 Rare drop unlocked: Vannyou in debt to you — $${amount}. Cherish this moment. It may never happen again. 😂`,
+  (amount: string) =>
+    `🦕 Dino triple-checked. Vannyou owes you $${amount}. He'll deny it. The database won't. 📋`,
+  (amount: string) =>
+    `✨ Congratulations! You found a glitch in the natural order: Vannyou owes you $${amount}. 🎉`,
+  (amount: string) =>
+    `📢 Historic moment: Vannyou owes $${amount} to YOU. Tell your grandchildren. Dino is witness. 🦕`,
+  (amount: string) =>
+    `🎯 Final score: Vannyou -$${amount}, You +$${amount}. Dino needs a minute.`,
+  (amount: string) =>
+    `🧾 Official tab: Vannyou owes you $${amount}. Keep this message as legal-ish proof. 😂`,
+  (amount: string) =>
+    `🚨 Collect $${amount} from Vannyou before the universe patches this bug.`,
+  (amount: string) =>
+    `🦖 Dino declares today a holiday: Vannyou owes you $${amount}.`,
+  (amount: string) =>
+    `💎 You are holding a $${amount} boss coupon. Redeem with confidence.`,
+  (amount: string) =>
+    `🏃 Run, don't walk — Vannyou owes you $${amount} and Dino is cheering from the sidelines.`,
+  (amount: string) =>
+    `🎬 End credits scene: Vannyou owes you $${amount}. Main character energy.`,
 ];
 
 const ALL_SETTLED = [
@@ -143,9 +206,7 @@ export async function buildOweMessage(
   }
 
   if (record && record.i_owe > 0) {
-    lines.push(
-      `🤑 Vannyou owes you: $${record.i_owe.toFixed(2)} — go collect!`,
-    );
+    lines.push(pick(I_OWE_THEM)(record.i_owe.toFixed(2)));
   }
 
   if (subscriptionMember && subscriptionMember.unpaid_count > 0) {
@@ -166,7 +227,7 @@ export async function buildOweMessage(
 
   if (depositTotal > 0) {
     lines.push("");
-    lines.push(`💰 Your deposit with Vannyou: $${depositTotal.toFixed(2)}`);
+    lines.push(pick(DEPOSIT_ON_FILE)(depositTotal.toFixed(2)));
   }
 
   const net = calculateNetOwed({
@@ -180,6 +241,8 @@ export async function buildOweMessage(
   if (net > 0) {
     lines.push(pick(NET_OWE_ME)(net.toFixed(2)));
   } else if (net < 0) {
+    lines.push(pick(RARE_VANNYOU_OWES_YOU));
+    lines.push("");
     lines.push(pick(NET_I_OWE)(Math.abs(net).toFixed(2)));
   } else {
     lines.push(pick(ALL_SETTLED));
