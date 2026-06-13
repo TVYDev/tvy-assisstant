@@ -12,6 +12,9 @@ import {
   toggleAllYouTubeMonthsPaid,
   getConfig,
   getUnpaidMonthCountsAll,
+  buildReminderMessage,
+  REMINDER_PARSE_MODE,
+  namesByShortcodeFromUsers,
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
   getAllTelegramUsers,
@@ -924,6 +927,33 @@ bot.command("ytunpaidall", async (ctx) => {
   return;
 });
 
+// Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat
+bot.command("previewytreminder", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const [monthlyFee, members, depositTotals, users] = await Promise.all([
+    getConfig("youtube_monthly_fee").then(parseFloat),
+    getUnpaidMonthCountsAll(),
+    getAllDepositTotals(),
+    getAllTelegramUsers(),
+  ]);
+  const namesByCode = namesByShortcodeFromUsers(users);
+
+  const caption =
+    "🔍 <b>Preview</b> — same as the monthly cron (not posted to group)\n\n" +
+    buildReminderMessage(members, monthlyFee, depositTotals, namesByCode);
+
+  const qrPath = path.join(process.cwd(), "data", "qr.png");
+  const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
+
+  return ctx.replyWithPhoto(file, {
+    caption,
+    parse_mode: REMINDER_PARSE_MODE,
+  });
+});
+
 // Owner-only: /allowe — summary of everyone who owes anything
 bot.command("allowe", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
@@ -1142,6 +1172,8 @@ bot.command("help", async (ctx) => {
       "    → Mark ALL months paid; optional amount or deposit\n" +
       "  /ytunpaidall <shortcode>\n" +
       "    → Mark ALL months as unpaid (1 group notification)\n" +
+      "  /previewytreminder\n" +
+      "    → Preview monthly YouTube reminder (QR + table) in this chat\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +

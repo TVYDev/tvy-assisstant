@@ -8,7 +8,11 @@ import {
   insertCurrentMonthForAll,
   getUnpaidMonthCountsAll,
   buildReminderMessage,
+  REMINDER_PARSE_MODE,
+  namesByShortcodeFromUsers,
+  getAllTelegramUsers,
 } from "@/lib/youtube-subscription";
+import { getAllDepositTotals } from "@/lib/deposit";
 
 export const dynamic = "force-dynamic";
 
@@ -37,14 +41,27 @@ export async function GET(req: NextRequest) {
 
   // dry_run: preview current state without inserting new month
   if (!dryRun) await insertCurrentMonthForAll();
-  const members = await getUnpaidMonthCountsAll();
+  const [members, depositTotals, users] = await Promise.all([
+    getUnpaidMonthCountsAll(),
+    getAllDepositTotals(),
+    getAllTelegramUsers(),
+  ]);
+  const namesByCode = namesByShortcodeFromUsers(users);
 
   // Send QR photo with the debt summary caption
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  const caption = buildReminderMessage(members, monthlyFee);
+  const caption = buildReminderMessage(
+    members,
+    monthlyFee,
+    depositTotals,
+    namesByCode,
+  );
 
-  await bot.api.sendPhoto(groupChatId, file, { caption });
+  await bot.api.sendPhoto(groupChatId, file, {
+    caption,
+    parse_mode: REMINDER_PARSE_MODE,
+  });
 
   return NextResponse.json({ ok: true, dry_run: dryRun, chat_id: groupChatId });
 }

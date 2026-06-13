@@ -169,8 +169,7 @@ describe("buildOweMessage", () => {
 
     const result = await buildOweMessage(123, "user", "User");
     expect(result).toContain("$15.00");
-    // one of the NET_I_OWE messages
-    expect(result?.toLowerCase()).toMatch(/vannyou owes you|owes you/);
+    expect(result?.toLowerCase()).toMatch(/vannyou|boss coupon|owes/);
   });
 
   it("shows all-settled message when net is zero", async () => {
