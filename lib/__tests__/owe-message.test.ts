@@ -212,10 +212,13 @@ describe("buildOweMessage", () => {
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(0));
 
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
     const result = await buildOweMessage(123, "user", "User");
-    // one of the ALL_SETTLED messages — all contain zero-balance language
+    randomSpy.mockRestore();
+
     expect(result).not.toBeNull();
-    expect(result).toMatch(/clean|settled|zero|nothing|empty|peace|debt-free|free|nada|even|square|spotless|គ្មាន|ស្អាត/i);
+    expect(result).toContain("You're all clean");
+    expect(result).toContain("Nothing owed");
   });
 
   it("uses username only when userId is 0", async () => {
