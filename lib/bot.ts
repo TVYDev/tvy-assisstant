@@ -204,6 +204,7 @@ bot.command("about", (ctx) => {
       "\n" +
       "*What Dino does for a living:*\n" +
       "📋 Track who owes Vannyou money (and gently shame them)\n" +
+      "💰 Keep prepaid deposits on file and factor them into balances\n" +
       "📺 Monitor YouTube subscription payments (so Vannyou doesn't have to)\n" +
       "💸 Show you how deep in the red you are via /owe\n" +
       "🔲 Provide the KHQR code for paying up via /qr\n" +

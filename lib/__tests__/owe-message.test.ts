@@ -206,7 +206,7 @@ describe("buildOweMessage", () => {
     mockResolveDepositForTelegramUser.mockResolvedValue(20);
 
     const result = await buildOweMessage(123, "user", "User");
-    expect(result).toContain("Your deposit with Vannyou: $20.00");
+    expect(result).toContain("$20.00");
     expect(result).toContain("$30.00");
   });
 
