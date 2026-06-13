@@ -9,6 +9,9 @@ import {
   sumMonthCharges,
   formatYoutubeMonthSummary,
   normalizeDate,
+  formatNewFeeAnnouncement,
+  getActiveFeeScheduleForDate,
+  getPriorFeeSchedule,
   type YoutubeFeeSchedule,
 } from "../youtube-fee";
 
@@ -108,5 +111,24 @@ describe("normalizeDate", () => {
   it("accepts YYYY-MM and YYYY-MM-DD", () => {
     expect(normalizeDate("2026-06")).toBe("2026-06-01");
     expect(normalizeDate("2026-06-15")).toBe("2026-06-15");
+  });
+});
+
+describe("fee announcement helpers", () => {
+  it("picks the active schedule for a date", () => {
+    expect(getActiveFeeScheduleForDate(schedules, "2026-05-15")?.fee).toBe(1.19);
+    expect(getActiveFeeScheduleForDate(schedules, "2026-06-20")?.fee).toBe(1.49);
+  });
+
+  it("finds the prior schedule before a new rate", () => {
+    const active = schedules[1];
+    expect(getPriorFeeSchedule(schedules, active)?.fee).toBe(1.19);
+  });
+
+  it("formats a first-time new fee announcement", () => {
+    const text = formatNewFeeAnnouncement(schedules[1], schedules[0]);
+    expect(text).toBe(
+      "📢 New YouTube monthly fee: <b>$1.49</b> (was $1.19) — effective Jun 2026",
+    );
   });
 });

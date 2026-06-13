@@ -11,6 +11,8 @@ import {
 import { getAllDepositTotals } from "@/lib/deposit";
 import {
   getYoutubeReminderOwings,
+  resolveYoutubeFeeAnnouncement,
+  markYoutubeFeeScheduleAnnounced,
 } from "@/lib/youtube-fee";
 
 export const dynamic = "force-dynamic";
@@ -38,20 +40,27 @@ export async function GET(req: NextRequest) {
 
   // dry_run: preview current state without inserting new month
   if (!dryRun) await insertCurrentMonthForAll();
-  const [owings, depositTotals] = await Promise.all([
+  const [owings, depositTotals, feeAnnouncement] = await Promise.all([
     getYoutubeReminderOwings(),
     getAllDepositTotals(),
+    resolveYoutubeFeeAnnouncement(),
   ]);
 
   // Send QR photo with the debt summary caption
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  const caption = buildReminderMessage(owings, depositTotals);
+  const caption = buildReminderMessage(owings, depositTotals, {
+    feeAnnouncement: feeAnnouncement.text ?? undefined,
+  });
 
   await bot.api.sendPhoto(groupChatId, file, {
     caption,
     parse_mode: REMINDER_PARSE_MODE,
   });
+
+  if (!dryRun && feeAnnouncement.scheduleIdToMark !== null) {
+    await markYoutubeFeeScheduleAnnounced(feeAnnouncement.scheduleIdToMark);
+  }
 
   return NextResponse.json({ ok: true, dry_run: dryRun, chat_id: groupChatId });
 }

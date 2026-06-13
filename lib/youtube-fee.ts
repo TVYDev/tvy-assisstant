@@ -1,5 +1,9 @@
 import { supabase } from "./supabase";
-import { getYouTubeMonthsForShortcode } from "./youtube-subscription";
+import {
+  getConfigOptional,
+  getYouTubeMonthsForShortcode,
+  setConfig,
+} from "./youtube-subscription";
 
 export interface YoutubeFeeSchedule {
   id: number;
@@ -294,4 +298,109 @@ export function formatFeeScheduleLine(schedule: YoutubeFeeSchedule): string {
   const from = schedule.effective_from;
   const to = schedule.effective_to ?? "ongoing";
   return `#${schedule.id} ${fee}/mo from ${from} to ${to}`;
+}
+
+export const YOUTUBE_FEE_ANNOUNCED_CONFIG_KEY =
+  "youtube_announced_fee_schedule_id";
+
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+export function formatFeeEffectiveMonth(date: string): string {
+  const [year, month] = date.split("-").map(Number);
+  return `${MONTH_LABELS[month - 1]} ${year}`;
+}
+
+export function getActiveFeeScheduleForDate(
+  schedules: YoutubeFeeSchedule[],
+  date: string,
+): YoutubeFeeSchedule | null {
+  const matches = schedules.filter(
+    (s) =>
+      s.effective_from <= date &&
+      (s.effective_to === null || s.effective_to >= date),
+  );
+
+  if (matches.length === 0) return null;
+
+  matches.sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+  return matches[0];
+}
+
+export function getPriorFeeSchedule(
+  schedules: YoutubeFeeSchedule[],
+  active: YoutubeFeeSchedule,
+): YoutubeFeeSchedule | null {
+  const prior = schedules
+    .filter((s) => s.effective_from < active.effective_from)
+    .sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+
+  return prior[0] ?? null;
+}
+
+export function formatNewFeeAnnouncement(
+  schedule: YoutubeFeeSchedule,
+  previous: YoutubeFeeSchedule,
+): string {
+  const fee = `$${schedule.fee.toFixed(2)}`;
+  const prevFee = `$${previous.fee.toFixed(2)}`;
+  const effective = formatFeeEffectiveMonth(schedule.effective_from);
+  return `📢 New YouTube monthly fee: <b>${fee}</b> (was ${prevFee}) — effective ${effective}`;
+}
+
+export interface YoutubeFeeAnnouncementResult {
+  text: string | null;
+  /** Set after a successful cron send to record first-time announcement. */
+  scheduleIdToMark: number | null;
+}
+
+export async function resolveYoutubeFeeAnnouncement(
+  asOf: Date = new Date(),
+): Promise<YoutubeFeeAnnouncementResult> {
+  const [schedules, announcedRaw] = await Promise.all([
+    getYoutubeFeeSchedules(),
+    getConfigOptional(YOUTUBE_FEE_ANNOUNCED_CONFIG_KEY),
+  ]);
+
+  const today = asOf.toISOString().slice(0, 10);
+  const active = getActiveFeeScheduleForDate(schedules, today);
+  if (!active) return { text: null, scheduleIdToMark: null };
+
+  const announcedId = announcedRaw ? parseInt(announcedRaw, 10) : null;
+
+  if (announcedId === null) {
+    return { text: null, scheduleIdToMark: active.id };
+  }
+
+  if (announcedId === active.id) {
+    return { text: null, scheduleIdToMark: null };
+  }
+
+  const previous = getPriorFeeSchedule(schedules, active);
+  if (!previous || previous.fee === active.fee) {
+    return { text: null, scheduleIdToMark: active.id };
+  }
+
+  return {
+    text: formatNewFeeAnnouncement(active, previous),
+    scheduleIdToMark: active.id,
+  };
+}
+
+export async function markYoutubeFeeScheduleAnnounced(
+  scheduleId: number,
+): Promise<void> {
+  await setConfig(YOUTUBE_FEE_ANNOUNCED_CONFIG_KEY, String(scheduleId));
 }
