@@ -131,10 +131,10 @@ describe("toggleDebtItemPaid", () => {
   it("returns shortcode and amount", async () => {
     setupMocks();
     const result = await toggleDebtItemPaid(7, true);
-    expect(result).toEqual({ shortcode: "BSR", amount: 20 });
+    expect(result).toEqual({ shortcode: "BSR", amount: 20, newlyPaid: true });
   });
 
-  it("calls decrement_owes_me when marking paid", async () => {
+  it("calls decrement_owes_me when marking unpaid item paid", async () => {
     setupMocks();
     await toggleDebtItemPaid(7, true);
     expect(mockRpc).toHaveBeenCalledWith("decrement_owes_me", {
@@ -143,13 +143,42 @@ describe("toggleDebtItemPaid", () => {
     });
   });
 
-  it("calls increment_owes_me when marking unpaid", async () => {
-    setupMocks();
+  it("calls increment_owes_me when marking paid item unpaid", async () => {
+    const paidItem = { id: 7, amount: 20, paid: true, debt_record_id: 3 };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "debt_items") {
+        return makeChain({ data: paidItem, error: null });
+      }
+      if (table === "debt_records") {
+        return makeChain({ data: rec, error: null });
+      }
+      return makeChain();
+    });
+    mockRpc.mockResolvedValue({ error: null });
+
     await toggleDebtItemPaid(7, false);
     expect(mockRpc).toHaveBeenCalledWith("increment_owes_me", {
       p_shortcode: "BSR",
       p_amount: 20,
     });
+  });
+
+  it("does not adjust owes_me when item is already paid", async () => {
+    const paidItem = { id: 7, amount: 20, paid: true, debt_record_id: 3 };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "debt_items") {
+        return makeChain({ data: paidItem, error: null });
+      }
+      if (table === "debt_records") {
+        return makeChain({ data: rec, error: null });
+      }
+      return makeChain();
+    });
+    mockRpc.mockResolvedValue({ error: null });
+
+    const result = await toggleDebtItemPaid(7, true);
+    expect(result).toEqual({ shortcode: "BSR", amount: 20, newlyPaid: false });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it("returns null when item not found", async () => {

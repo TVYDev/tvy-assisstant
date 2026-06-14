@@ -84,7 +84,7 @@ export async function addDebt(
 export async function toggleDebtItemPaid(
   itemId: number,
   paid: boolean,
-): Promise<{ shortcode: string; amount: number } | null> {
+): Promise<{ shortcode: string; amount: number; newlyPaid: boolean } | null> {
   const { data: item, error: fetchError } = await supabase
     .from("debt_items")
     .select("id, amount, paid, debt_record_id")
@@ -93,6 +93,8 @@ export async function toggleDebtItemPaid(
   if (fetchError)
     throw new Error(`Failed to fetch item: ${fetchError.message}`);
   if (!item) return null;
+
+  const wasPaid = Boolean((item as { paid: boolean }).paid);
 
   const { error: updateError } = await supabase
     .from("debt_items")
@@ -112,19 +114,19 @@ export async function toggleDebtItemPaid(
   const amount = Number((item as { amount: number }).amount);
 
   // Update owes_me: if marking paid, decrement; if unpaid, increment
-  if (paid) {
+  if (paid && !wasPaid) {
     await supabase.rpc("decrement_owes_me", {
       p_shortcode: shortcode,
       p_amount: amount,
     });
-  } else {
+  } else if (!paid && wasPaid) {
     await supabase.rpc("increment_owes_me", {
       p_shortcode: shortcode,
       p_amount: amount,
     });
   }
 
-  return { shortcode, amount };
+  return { shortcode, amount, newlyPaid: paid && !wasPaid };
 }
 
 export async function getDebtByShortcode(

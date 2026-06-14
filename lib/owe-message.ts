@@ -1,10 +1,19 @@
 import type { DebtRecord } from "./debt";
-import { getDebtByUsername, getDebtByUserId } from "./debt";
+import { getDebtByUsername, getDebtByUserId, getDebtByShortcode } from "./debt";
+import {
+  getDepositBalanceByShortcode,
+  resolveDepositForTelegramUser,
+} from "./deposit";
+import {
+  getUnpaidYoutubeOwing,
+  formatYoutubeMonthSummary,
+} from "./youtube-fee";
 import type { SubscriptionMember } from "./youtube-subscription";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
-  getConfig,
+  getMemberByShortcode,
+  getTelegramUsernameByShortcode,
 } from "./youtube-subscription";
 
 /** Resolve ledger debt: stub row by Telegram username first, then linked row by user id. */
@@ -60,6 +69,38 @@ const GREETINGS = [
     username
       ? `💼 Opening the books for ${name} (@${username}) 👇`
       : `💼 Opening the books for ${name} 👇`,
+  (name: string, username: string) =>
+    username
+      ? `🦖 Ledger time, ${name} (@${username}). Dino brought popcorn. 🍿`
+      : `🦖 Ledger time, ${name}. Dino brought popcorn. 🍿`,
+  (name: string, username: string) =>
+    username
+      ? `🔍 ${name} (@${username}), let's see what the numbers say...`
+      : `🔍 ${name}, let's see what the numbers say...`,
+  (name: string, username: string) =>
+    username
+      ? `👋 Yo ${name} (@${username}) — Dino's got your balance right here`
+      : `👋 Yo ${name} — Dino's got your balance right here`,
+  (name: string, username: string) =>
+    username
+      ? `📊 Financial report for ${name} (@${username}), courtesy of Nailong 🦕`
+      : `📊 Financial report for ${name}, courtesy of Nailong 🦕`,
+  (name: string, username: string) =>
+    username
+      ? `សួស្តី ${name} (@${username})! Dino មកពិនិត្យបញ្ជីរបស់អ្នកហើយ... 👀`
+      : `សួស្តី ${name}! Dino មកពិនិត្យបញ្ជីរបស់អ្នកហើយ... 👀`,
+  (name: string, username: string) =>
+    username
+      ? `🦕 បង ${name} (@${username}) — Nailong បើកសៀវភៅគណនេយ្យឲ្យហើយ 📋`
+      : `🦕 បង ${name} — Nailong បើកសៀវភៅគណនេយ្យឲ្យហើយ 📋`,
+  (name: string, username: string) =>
+    username
+      ? `👋 អូ ${name} (@${username})! មកមើលថាតើជំពាក់ប៉ុន្មាន... 🦖`
+      : `👋 អូ ${name}! មកមើលថាតើជំពាក់ប៉ុន្មាន... 🦖`,
+  (name: string, username: string) =>
+    username
+      ? `📋 ${name} (@${username}) — Dino រៀបចំរបាយការណ៍ហើយ, មកចុះ! 👇`
+      : `📋 ${name} — Dino រៀបចំរបាយការណ៍ហើយ, មកចុះ! 👇`,
 ];
 
 const YT_SLEEPING_ON = [
@@ -67,6 +108,14 @@ const YT_SLEEPING_ON = [
   (total: string) => `📺 YouTube subscription collecting dust: $${total}`,
   (total: string) => `😅 YouTube: still unpaid btw — $${total}`,
   (total: string) => `📺 YouTube tab (in case you forgot): $${total}`,
+  (total: string) => `📺 YouTube balance doing the side-eye thing: $${total}`,
+  (total: string) => `🦕 Dino found unpaid YouTube months worth $${total}`,
+  (total: string) => `📺 Streaming debt alert: $${total} on YouTube`,
+  (total: string) => `😬 YouTube subscription: $${total} still pending`,
+  (total: string) => `📺 YouTube មិនទាន់បង់: $${total} — Dino កំពុងចាំណា 🦕`,
+  (total: string) => `📺 ជំពាក់ YouTube: $${total} (សូមបង់ពេលស្រួលណា 🙏)`,
+  (total: string) => `📺 YouTube tab នៅតែពិរើ: $${total} 😅`,
+  (total: string) => `🦖 Nailong រកឃើញ YouTube unpaid: $${total}`,
 ];
 
 const NET_OWE_ME = [
@@ -78,15 +127,117 @@ const NET_OWE_ME = [
     `💰 Grand total you owe: $${amount}. Venmo? KHQR? Cash? Dino accepts all! 🦕`,
   (amount: string) =>
     `🧾 Tab total: $${amount} owed to Vannyou. The QR code is waiting for you! 😂`,
+  (amount: string) =>
+    `🦕 Final verdict: $${amount} to Vannyou. No appeals. Pay up! 😂`,
+  (amount: string) =>
+    `💸 Net damage: $${amount}. Dino believes in you (to pay). 🙏`,
+  (amount: string) =>
+    `📉 Your balance with Vannyou: -$${amount}. Fix it before Dino sends another reminder! 🦖`,
+  (amount: string) =>
+    `🧮 Math checked twice: you owe $${amount}. Dino doesn't make typos. 📋`,
+  (amount: string) =>
+    `💸 សរុបជំពាក់ Vannyou: $${amount} — សូមបង់ណា បង! 😅`,
+  (amount: string) =>
+    `🦕 Dino បញ្ជាក់: អ្នកជំពាក់ $${amount}. Scan QR បាន! 💸`,
+  (amount: string) =>
+    `💰 តម្លៃសរុប: $${amount} owed to Vannyou. សូមអរគុណដែលបង់! 🙏`,
+  (amount: string) =>
+    `📉 ជំពាក់ $${amount} — Dino មិនភ្លេចទេ, បង្អែក QR បាន 😂`,
+];
+
+const I_OWE_THEM = [
+  (amount: string) =>
+    `🤑 Vannyou owes you: $${amount} — Dino marked this as a rare boss L. Go collect!`,
+  (amount: string) =>
+    `👑 Boss debt alert: Vannyou owes you $${amount}. Dino had to fan himself after reading this.`,
+  (amount: string) =>
+    `🦄 Unicorn moment: Vannyou is down $${amount} with you. Dino recommends screenshot evidence.`,
+  (amount: string) =>
+    `📉 Vannyou tab: -$${amount} (yes, negative). Dino is as shocked as you are.`,
+  (amount: string) =>
+    `🎰 Jackpot? Vannyou owes you $${amount}. Dino has never seen this energy before. 😂`,
+  (amount: string) =>
+    `🦕 Historic ledger entry: Vannyou owes you $${amount}. Nailong approves this chaos.`,
+  (amount: string) =>
+    `🏦 Vannyou's tab with you: $${amount} in YOUR favor. Dino is taking notes. 📝`,
+  (amount: string) =>
+    `🎁 Surprise! Vannyou owes you $${amount}. Don't let him pretend he forgot. 😏`,
+  (amount: string) =>
+    `🤑 Vannyou ជំពាក់អ្នក $${amount}! ករណីកម្រ ណា Dino ភ្ញាក់ផ្អើល 🦕`,
+  (amount: string) =>
+    `👑 អើយ! Vannyou owes you $${amount} — ទាមទារឲ្យបង់! Dino ជាសាក្សី 😂`,
+  (amount: string) =>
+    `🦄 មិនធម្មតាទេ — Vannyou down $${amount} with you. Screenshot ទុក! 📸`,
+];
+
+const DEPOSIT_ON_FILE = [
+  (amount: string) => `💰 Your deposit with Vannyou: $${amount}`,
+  (amount: string) => `💰 Prepaid credit on file: $${amount} (Dino is guarding it 🦕)`,
+  (amount: string) => `💰 You've got $${amount} sitting with Vannyou like a VIP tab`,
+  (amount: string) => `💰 Deposit balance: $${amount} — your money, his problem 😌`,
+  (amount: string) => `💰 $${amount} in your Vannyou wallet. Not debt. Power move.`,
+  (amount: string) => `💰 Credit available: $${amount}. Dino notes you planned ahead 👀`,
+  (amount: string) => `💰 $${amount} prepaid — like a buffet card for future payments 🎟️`,
+  (amount: string) => `💰 Deposit stash: $${amount}. Dino respects the foresight. 🦖`,
+  (amount: string) => `💰 លុយដាក់ប្រាក់របស់អ្នក: $${amount} (Dino កំពុងរក្សាទុក 🦕)`,
+  (amount: string) => `💰 មាន credit $${amount} នៅ Vannyou — smart move ណា! 👀`,
+  (amount: string) => `💰 ប្រាក់កក់: $${amount} — not debt, just prepay power 😌`,
+];
+
+const RARE_VANNYOU_OWES_YOU = [
+  "🚨 RARE EVENT DETECTED 🦕 Dino ran the numbers three times. Same result. Vannyou owes YOU money. This is not a drill.",
+  "🦄 Hold up. Dino has been doing this job for a while and this almost never happens. Vannyou is in the red with you. Screenshot it. 📸",
+  "🦕 Dino had to sit down for this one. Vannyou owing someone? Statistically rarer than a paid YouTube month on day one. 😂",
+  "⚠️ Breaking: local dino discovers Vannyou owes a human money. Scientists are confused. Vannyou is probably confused too.",
+  "🎰 You just hit the rarest outcome on Dino's ledger slot machine. Vannyou owes YOU. Frame this message. Put it in a museum.",
+  "🦖 Alert level: mythical. Vannyou owing you is like seeing Nailong skip a meal — technically possible, deeply suspicious.",
+  "🛸 Dino is filing this under 'unnatural events'. Vannyou owing you should come with background music.",
+  "📯 Dino blew the rare-event trumpet 🎺 Vannyou owes YOU. Witnesses recommended.",
+  "🧪 Lab result: 99.9% of tabs end with you owing Vannyou. You got the 0.1%. Enjoy responsibly.",
+  "🦕 Dino refreshed the page. Still true. Vannyou owes you. Reality is buffering.",
+  "🏆 Achievement unlocked: Make Vannyou Owe You. Dino is emotionally unprepared.",
+  "🌋 Financial volcano status: dormant for years, erupted today. Vannyou owes YOU.",
+  "🎪 Welcome to the circus. Main attraction: Vannyou in debt to a regular human.",
+  "🦖 Dino checked with management. Management (Vannyou) is also surprised.",
+  "🦕 អើយ! Vannyou ជំពាក់អ្នក! Dino ពិនិត្យ ៣ ដងហើយ — លទ្ធផលដដែល 😂",
+  "📸 ករណីកម្រ! Vannyou owes YOU. Screenshot ទុក — Dino ជាសាក្សី 🦖",
 ];
 
 const NET_I_OWE = [
   (amount: string) =>
-    `🤑 Bottom line: Vannyou owes you $${amount} — go chase him! 🏃`,
+    `🤑 Bottom line: Vannyou owes you $${amount}. Go collect before physics corrects itself! 🏃`,
   (amount: string) =>
-    `💰 Vannyou is in the red with you — he owes $${amount}. Go collect! 😤`,
+    `💰 Plot twist of the century: Vannyou owes you $${amount}. Dino still doesn't trust it. 👀`,
   (amount: string) =>
-    `🎊 Good news! Vannyou owes YOU $${amount}. Time to hunt him down! 🏃💨`,
+    `🎊 Impossible-ish news! Vannyou owes YOU $${amount}. Hunt him down while the timeline is still valid! 🏃💨`,
+  (amount: string) =>
+    `🦄 Rare drop unlocked: Vannyou in debt to you — $${amount}. Cherish this moment. It may never happen again. 😂`,
+  (amount: string) =>
+    `🦕 Dino triple-checked. Vannyou owes you $${amount}. He'll deny it. The database won't. 📋`,
+  (amount: string) =>
+    `✨ Congratulations! You found a glitch in the natural order: Vannyou owes you $${amount}. 🎉`,
+  (amount: string) =>
+    `📢 Historic moment: Vannyou owes $${amount} to YOU. Tell your grandchildren. Dino is witness. 🦕`,
+  (amount: string) =>
+    `🎯 Final score: Vannyou -$${amount}, You +$${amount}. Dino needs a minute.`,
+  (amount: string) =>
+    `🧾 Official tab: Vannyou owes you $${amount}. Keep this message as legal-ish proof. 😂`,
+  (amount: string) =>
+    `🚨 Collect $${amount} from Vannyou before the universe patches this bug.`,
+  (amount: string) =>
+    `🦖 Dino declares today a holiday: Vannyou owes you $${amount}.`,
+  (amount: string) =>
+    `💎 You are holding a $${amount} boss coupon. Redeem with confidence.`,
+  (amount: string) =>
+    `🏃 Run, don't walk — Vannyou owes you $${amount} and Dino is cheering from the sidelines.`,
+  (amount: string) =>
+    `🎬 End credits scene: Vannyou owes you $${amount}. Main character energy.`,
+  (amount: string) =>
+    `🤑 Vannyou ជំពាក់អ្នក $${amount}! ទៅយកមុនពេលវាបាត់! 🏃`,
+  (amount: string) =>
+    `🎊 អរគុណសម្រាប់ glitch នេះ — Vannyou owes you $${amount}! 🦕`,
+  (amount: string) =>
+    `📢 ព័ត៌មានកម្ម! Vannyou ជំពាក់ $${amount} ដល់អ្នក. Dino confirms. ✅`,
 ];
 
 const ALL_SETTLED = [
@@ -94,27 +245,56 @@ const ALL_SETTLED = [
   "🎉 All settled up! You and Vannyou are even. Live in peace! 🕊️",
   "🦕 Zero balance! Dino approves. You're officially a good person today! ✅",
   "💚 Nothing owed, nothing due. Clean money, clean conscience! 😇",
+  "🏆 Debt-free status achieved! Dino is doing a little victory dance. 🦖",
+  "✅ Tab closed. Balance zero. Dino salutes you. 🫡",
+  "🌟 Financially zen. No debts, no drama. Dino is impressed. 😌",
+  "🧼 Spotless ledger! You and Vannyou are square. Dino can rest now. 🦕",
+  "🎊 ZERO. NADA. ZILCH. Dino checked three times because he didn't believe it. 🦖",
+  "🦕 Dino whispered: 'finally, a peaceful soul.' Nothing owed. Go touch grass. 🌿",
+  "💸 Your wallet and Vannyou's wallet shook hands and agreed to disagree. Settled! 🤝",
+  "🧘 You have achieved financial enlightenment: owe nothing, fear nothing. Dino bows. 🙏",
+  "🎬 Roll credits — no debts, no cliffhanger. Dino gives this episode 5 stars. ⭐",
+  "🦖 Dino deleted your name from the 'chase list.' You're free. Fly, birdie. 🕊️",
+  "🍾 Pop the imaginary champagne! Balance zero. Dino is not sending a reminder. Ever. 😂",
+  "👑 Crown status: Debtless Royalty. Vannyou has no claim on you today. 👸",
+  "🎰 You hit the jackpot: $0 owed. Dino is suspicious but happy. 🦕",
+  "📭 Inbox empty, guilt empty, balance empty. This is what peace feels like. ✨",
+  "🦕 Dino stamped your file: APPROVED. No payment. No chase. Just vibes. 😌",
+  "🏖️ Consider yourself on financial vacation. Nothing due. Dino is jealous. 🌴",
+  "🎯 Bullseye: perfectly even with Vannyou. Dino has nothing to nag you about. 🦖",
+  "🧊 Your debt meter is frozen at zero. Dino won't poke it. Probably. 😏",
+  "🎪 Ladies and gentlemen — a balanced tab! Dino drops the mic. 🎤",
+  "🦕 Nailong declares you 'certified chill.' Zero owed. Carry on. ✌️",
+  "✨ គ្មានជំពាក់ទេ! All clean. Dino proud of you 🦕",
+  "🎉 ស្អាតហើយ! Nothing owed — រស់ស្ងប់ស្ងាត់បាន 🕊️",
+  "🦖 តុល្យភាពល្អ! Zero balance. Dino សរសើរអ្នក 🫡",
+  "💚 គ្មានជំពាក់ គ្មាន stress. Dino អាចសម្រាកបានហើយ 😌",
+  "✅ បញ្ជីស្អាត! You and Vannyou even. អរគុណ! 🙏",
+  "🦕 មិនជំពាក់អ្វីទេ — Nailong approves. Go enjoy life 🌿",
 ];
 
-export async function buildOweMessage(
-  userId: number,
-  username: string,
-  firstName: string,
-): Promise<string | null> {
-  const [record, subscriptionMember, monthlyFee] = await Promise.all([
-    resolveDebtForTelegramUser(userId, username),
-    resolveSubscriptionMemberForTelegramUser(userId, username),
-    getConfig("youtube_monthly_fee").then(parseFloat),
-  ]);
+export function calculateNetOwed(params: {
+  owes_me: number;
+  i_owe: number;
+  deposit: number;
+  subOwed: number;
+}): number {
+  return params.owes_me + params.subOwed - params.i_owe - params.deposit;
+}
 
-  if (!record && !subscriptionMember) return null;
+function formatOweMessageLines(params: {
+  record: DebtRecord | null;
+  subscriptionMember: SubscriptionMember | null;
+  ytOwing: { total: number; months: { month: string; fee: number }[] };
+  depositTotal: number;
+  name: string;
+  username: string;
+}): string | null {
+  const { record, subscriptionMember, ytOwing, depositTotal, name, username } =
+    params;
 
-  const name =
-    record?.name ??
-    firstName ??
-    record?.shortcode ??
-    subscriptionMember?.id ??
-    username;
+  if (!record && !subscriptionMember && depositTotal === 0) return null;
+
   const lines: string[] = [pick(GREETINGS)(name, username), ""];
 
   const unpaidItems = record?.items.filter((item) => !item.paid) ?? [];
@@ -130,36 +310,104 @@ export async function buildOweMessage(
   }
 
   if (record && record.i_owe > 0) {
-    lines.push(
-      `🤑 Vannyou owes you: $${record.i_owe.toFixed(2)} — go collect!`,
-    );
+    lines.push(pick(I_OWE_THEM)(record.i_owe.toFixed(2)));
   }
 
   if (subscriptionMember && subscriptionMember.unpaid_count > 0) {
-    const subTotal = subscriptionMember.unpaid_count * monthlyFee;
     lines.push("");
-    lines.push(pick(YT_SLEEPING_ON)(subTotal.toFixed(2)));
-    lines.push(
-      `  • ${subscriptionMember.unpaid_count} month(s) × $${monthlyFee.toFixed(2)}/month`,
-    );
+    lines.push(pick(YT_SLEEPING_ON)(ytOwing.total.toFixed(2)));
+    lines.push(`  • ${formatYoutubeMonthSummary(ytOwing)}`);
   }
 
   const debtOwesMe = record?.owes_me ?? 0;
   const debtIOwe = record?.i_owe ?? 0;
-  const subOwed =
-    subscriptionMember && subscriptionMember.unpaid_count > 0
-      ? subscriptionMember.unpaid_count * monthlyFee
-      : 0;
-  const net = debtOwesMe + subOwed - debtIOwe;
+  const subOwed = ytOwing.total;
+
+  if (depositTotal > 0) {
+    lines.push("");
+    lines.push(pick(DEPOSIT_ON_FILE)(depositTotal.toFixed(2)));
+  }
+
+  const net = calculateNetOwed({
+    owes_me: debtOwesMe,
+    i_owe: debtIOwe,
+    deposit: depositTotal,
+    subOwed,
+  });
 
   lines.push("");
   if (net > 0) {
     lines.push(pick(NET_OWE_ME)(net.toFixed(2)));
   } else if (net < 0) {
+    lines.push(pick(RARE_VANNYOU_OWES_YOU));
+    lines.push("");
     lines.push(pick(NET_I_OWE)(Math.abs(net).toFixed(2)));
   } else {
     lines.push(pick(ALL_SETTLED));
   }
 
   return lines.join("\n");
+}
+
+export async function buildOweMessage(
+  userId: number,
+  username: string,
+  firstName: string,
+): Promise<string | null> {
+  const [record, subscriptionMember, deposit] = await Promise.all([
+    resolveDebtForTelegramUser(userId, username),
+    resolveSubscriptionMemberForTelegramUser(userId, username),
+    resolveDepositForTelegramUser(userId, username),
+  ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(subscriptionMember.id)
+      : { total: 0, months: [] };
+
+  const name =
+    record?.name ??
+    firstName ??
+    record?.shortcode ??
+    subscriptionMember?.id ??
+    username;
+
+  return formatOweMessageLines({
+    record,
+    subscriptionMember,
+    ytOwing,
+    depositTotal: deposit ?? 0,
+    name,
+    username,
+  });
+}
+
+export async function buildOweMessageForShortcode(
+  shortcode: string,
+): Promise<string | null> {
+  const code = shortcode.toUpperCase();
+  const [record, subscriptionMember, depositTotal, telegramUsername] =
+    await Promise.all([
+      getDebtByShortcode(code),
+      getMemberByShortcode(code),
+      getDepositBalanceByShortcode(code),
+      getTelegramUsernameByShortcode(code),
+    ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(code)
+      : { total: 0, months: [] };
+
+  const username = telegramUsername ?? "";
+  const name = record?.name ?? code;
+
+  return formatOweMessageLines({
+    record,
+    subscriptionMember,
+    ytOwing,
+    depositTotal,
+    name,
+    username,
+  });
 }

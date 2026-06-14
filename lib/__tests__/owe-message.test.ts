@@ -1,37 +1,72 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { mockResolveDepositForTelegramUser } = vi.hoisted(() => ({
+  mockResolveDepositForTelegramUser: vi.fn().mockResolvedValue(0),
+}));
+
 // ── Mock dependencies ─────────────────────────────────────────────────────────
 
 vi.mock("../debt", () => ({
   getDebtByUserId: vi.fn(),
   getDebtByUsername: vi.fn(),
+  getDebtByShortcode: vi.fn(),
+}));
+
+vi.mock("../youtube-fee", () => ({
+  getUnpaidYoutubeOwing: vi.fn(),
+  formatYoutubeMonthSummary: (owing: { months: unknown[]; total: number }) =>
+    `${owing.months.length} month(s) — $${owing.total.toFixed(2)}`,
 }));
 
 vi.mock("../youtube-subscription", () => ({
   getMemberByTelegramIdentity: vi.fn(),
   getMemberByUsername: vi.fn(),
-  getConfig: vi.fn(),
+  getMemberByShortcode: vi.fn(),
+  getTelegramUsernameByShortcode: vi.fn(),
 }));
 
-import { buildOweMessage } from "../owe-message";
-import { getDebtByUserId, getDebtByUsername } from "../debt";
+vi.mock("../deposit", () => ({
+  resolveDepositForTelegramUser: mockResolveDepositForTelegramUser,
+  getDepositBalanceByShortcode: vi.fn(),
+}));
+
+import { buildOweMessage, buildOweMessageForShortcode } from "../owe-message";
+import { getDebtByUserId, getDebtByUsername, getDebtByShortcode } from "../debt";
 import {
   getMemberByTelegramIdentity,
   getMemberByUsername,
-  getConfig,
+  getMemberByShortcode,
+  getTelegramUsernameByShortcode,
 } from "../youtube-subscription";
-
+import { getUnpaidYoutubeOwing } from "../youtube-fee";
+import { getDepositBalanceByShortcode } from "../deposit";
 const mockGetDebtByUserId = vi.mocked(getDebtByUserId);
 const mockGetDebtByUsername = vi.mocked(getDebtByUsername);
+const mockGetDebtByShortcode = vi.mocked(getDebtByShortcode);
 const mockGetMemberByTelegramIdentity = vi.mocked(getMemberByTelegramIdentity);
 const mockGetMemberByUsername = vi.mocked(getMemberByUsername);
-const mockGetConfig = vi.mocked(getConfig);
+const mockGetMemberByShortcode = vi.mocked(getMemberByShortcode);
+const mockGetTelegramUsernameByShortcode = vi.mocked(
+  getTelegramUsernameByShortcode,
+);
+const mockGetUnpaidYoutubeOwing = vi.mocked(getUnpaidYoutubeOwing);
+const mockGetDepositBalanceByShortcode = vi.mocked(getDepositBalanceByShortcode);
 
 // ── shared fixtures ───────────────────────────────────────────────────────────
 
 const NO_DEBT = null;
 const NO_MEMBER = null;
-const MONTHLY_FEE = "5.00";
+const MONTHLY_FEE = 5.0;
+
+function mockYoutubeOwing(months: number) {
+  mockGetUnpaidYoutubeOwing.mockResolvedValue({
+    total: months * MONTHLY_FEE,
+    months: Array.from({ length: months }, (_, i) => ({
+      month: `2026-0${i + 1}-01`,
+      fee: MONTHLY_FEE,
+    })),
+  });
+}
 
 function debtRecord(overrides = {}) {
   return {
@@ -58,7 +93,8 @@ function ytMember(unpaid_count = 2) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetConfig.mockResolvedValue(MONTHLY_FEE);
+  mockGetUnpaidYoutubeOwing.mockResolvedValue({ total: 0, months: [] });
+  mockResolveDepositForTelegramUser.mockResolvedValue(0);
 });
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -92,16 +128,18 @@ describe("buildOweMessage", () => {
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(3));
+    mockYoutubeOwing(3);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(result).toContain("3 month(s)");
-    expect(result).toContain("$5.00");
+    expect(result).toContain("$15.00");
   });
 
   it("includes YouTube when username matches stub (no userId lookup for member)", async () => {
     mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetMemberByUsername.mockResolvedValue(ytMember(3));
+    mockYoutubeOwing(3);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(mockGetMemberByUsername).toHaveBeenCalledWith("user");
@@ -116,7 +154,8 @@ describe("buildOweMessage", () => {
       debtRecord({ owes_me: 10, i_owe: 0 }),
     );
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
-    mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2)); // 2 × $5 = $10
+    mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2));
+    mockYoutubeOwing(2);
 
     const result = await buildOweMessage(123, "user", "User");
     // net = 10 + 10 = 20
@@ -128,6 +167,7 @@ describe("buildOweMessage", () => {
       debtRecord({ owes_me: 10, i_owe: 0 }),
     );
     mockGetMemberByUsername.mockResolvedValue(ytMember(2));
+    mockYoutubeOwing(2);
 
     const result = await buildOweMessage(123, "user", "User");
     expect(mockGetDebtByUserId).not.toHaveBeenCalled();
@@ -161,8 +201,7 @@ describe("buildOweMessage", () => {
 
     const result = await buildOweMessage(123, "user", "User");
     expect(result).toContain("$15.00");
-    // one of the NET_I_OWE messages
-    expect(result?.toLowerCase()).toMatch(/vannyou owes you|owes you/);
+    expect(result?.toLowerCase()).toMatch(/vannyou|boss coupon|owes/);
   });
 
   it("shows all-settled message when net is zero", async () => {
@@ -173,10 +212,13 @@ describe("buildOweMessage", () => {
     mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
     mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(0));
 
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
     const result = await buildOweMessage(123, "user", "User");
-    // one of the ALL_SETTLED messages — all contain zero-balance language
+    randomSpy.mockRestore();
+
     expect(result).not.toBeNull();
-    expect(result).toMatch(/clean|settled|zero|nothing/i);
+    expect(result).toContain("You're all clean");
+    expect(result).toContain("Nothing owed");
   });
 
   it("uses username only when userId is 0", async () => {
@@ -190,6 +232,18 @@ describe("buildOweMessage", () => {
     expect(result).toContain("$25.00");
   });
 
+  it("reduces net owed when user has a deposit", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(debtRecord({ owes_me: 50 }));
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
+    mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
+    mockResolveDepositForTelegramUser.mockResolvedValue(20);
+
+    const result = await buildOweMessage(123, "user", "User");
+    expect(result).toContain("$20.00");
+    expect(result).toContain("$30.00");
+  });
+
   it("uses userId only when username is empty", async () => {
     mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
     mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
@@ -199,6 +253,33 @@ describe("buildOweMessage", () => {
     expect(mockGetMemberByUsername).not.toHaveBeenCalled();
     expect(mockGetDebtByUserId).toHaveBeenCalledWith(123);
     expect(mockGetMemberByTelegramIdentity).toHaveBeenCalledWith(123);
+    expect(result).toBeNull();
+  });
+});
+
+describe("buildOweMessageForShortcode", () => {
+  it("builds the same style message from shortcode lookups", async () => {
+    mockGetDebtByShortcode.mockResolvedValue(debtRecord({ shortcode: "BSR" }));
+    mockGetMemberByShortcode.mockResolvedValue(ytMember(2));
+    mockGetDepositBalanceByShortcode.mockResolvedValue(0);
+    mockGetTelegramUsernameByShortcode.mockResolvedValue("bsr_user");
+    mockYoutubeOwing(2);
+
+    const result = await buildOweMessageForShortcode("bsr");
+    expect(mockGetDebtByShortcode).toHaveBeenCalledWith("BSR");
+    expect(result).toContain("Tester");
+    expect(result).toContain("@bsr_user");
+    expect(result).toContain("$25.00");
+    expect(result).toContain("$10.00");
+  });
+
+  it("returns null when shortcode has no records", async () => {
+    mockGetDebtByShortcode.mockResolvedValue(NO_DEBT);
+    mockGetMemberByShortcode.mockResolvedValue(NO_MEMBER);
+    mockGetDepositBalanceByShortcode.mockResolvedValue(0);
+    mockGetTelegramUsernameByShortcode.mockResolvedValue(null);
+
+    const result = await buildOweMessageForShortcode("NOBODY");
     expect(result).toBeNull();
   });
 });

@@ -1,3 +1,8 @@
+import type { YoutubeMonthCharge } from "./youtube-fee";
+import {
+  formatReminderMonthFeeBreakdown,
+  formatReminderMonthFeeSuffix,
+} from "./youtube-fee";
 import { supabase } from "./supabase";
 
 export interface SubscriptionMember {
@@ -51,6 +56,14 @@ export async function updateTelegramUserField(
     await Promise.all([
       supabase
         .from("debt_records")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
+        .from("deposit_balances")
+        .update({ shortcode: newCode })
+        .eq("shortcode", code),
+      supabase
+        .from("deposit_transactions")
         .update({ shortcode: newCode })
         .eq("shortcode", code),
       supabase
@@ -130,16 +143,22 @@ export async function getConfig(key: string): Promise<string> {
   return (data as { value: string }).value;
 }
 
+export async function getConfigOptional(key: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error)
+    throw new Error(`Failed to fetch config "${key}": ${error.message}`);
+  return data ? (data as { value: string }).value : null;
+}
+
 export async function setConfig(key: string, value: string): Promise<void> {
-  const now = new Date().toISOString();
-  const { error } = await supabase.from("app_config").upsert(
-    {
-      key,
-      value,
-      updated_at: now,
-    },
-    { onConflict: "key" },
-  );
+  const { error } = await supabase
+    .from("app_config")
+    .upsert({ key, value }, { onConflict: "key" });
 
   if (error)
     throw new Error(`Failed to set config "${key}": ${error.message}`);
@@ -289,6 +308,7 @@ export async function toggleAllYouTubeMonthsPaid(
     .from("youtube_subscription_months")
     .update({ paid })
     .eq("shortcode", normalized)
+    .eq("paid", !paid)
     .select("id, shortcode, month, paid");
 
   if (error) throw new Error(`Failed to toggle all months: ${error.message}`);
@@ -322,20 +342,78 @@ export async function getUnpaidMonthCountsAll(): Promise<SubscriptionMember[]> {
 }
 
 export function buildReminderMessage(
-  members: SubscriptionMember[],
-  monthlyFee: number,
+  members: { id: string; months: YoutubeMonthCharge[]; total: number }[],
+  depositTotals: Map<string, number> = new Map(),
+  options: { feeAnnouncement?: string } = {},
 ): string {
-  const lines: string[] = [`Each = $${monthlyFee.toFixed(2)}`, "====="];
+  type Row = {
+    id: string;
+    monthCharges: YoutubeMonthCharge[];
+    months: number;
+    total: number;
+    deposit: number;
+    net: number;
+  };
+
+  const rows: Row[] = [];
 
   for (const member of members) {
-    if (member.unpaid_count === 0) continue;
-    if (member.unpaid_count === 1) {
-      lines.push(`⏳ ${member.id}`);
-    } else {
-      const total = (member.unpaid_count * monthlyFee).toFixed(2);
-      lines.push(`⏳ ${member.id} x ${member.unpaid_count} = ${total}`);
-    }
+    if (member.months.length === 0) continue;
+    const total = member.total;
+    const deposit = depositTotals.get(member.id) ?? 0;
+    const net = Math.max(total - deposit, 0);
+    rows.push({
+      id: member.id,
+      monthCharges: member.months,
+      months: member.months.length,
+      total,
+      deposit,
+      net,
+    });
   }
+
+  if (rows.length === 0) {
+    return "📺 YouTube: everyone's paid up! ✅";
+  }
+
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const monthLabel = (n: number) => (n === 1 ? "1 month" : `${n} months`);
+  const toPay = (amount: number) =>
+    `<b>👉 To Pay ${money(amount)}</b>`;
+
+  const personBlocks = rows.map((r) => {
+    const settled = r.net === 0 && r.deposit > 0;
+    const icon = settled ? "✅" : "⏳";
+    const feeSuffix = formatReminderMonthFeeSuffix(r.monthCharges);
+    const who = `${icon} <b>${r.id}</b> — ${monthLabel(r.months)}${feeSuffix}`;
+    const feeBreakdown = formatReminderMonthFeeBreakdown(r.monthCharges);
+
+    if (settled) {
+      const lines = [`${who} — <b>Settled</b> (deposit ${money(r.deposit)})`];
+      if (feeBreakdown) lines.push(`   ${feeBreakdown}`);
+      return lines;
+    }
+
+    const lines = [`${who} — ${toPay(r.net)}`];
+    if (feeBreakdown) lines.push(`   ${feeBreakdown}`);
+    if (r.deposit > 0) {
+      lines.push(`   deposit ${money(r.deposit)}`);
+    }
+    return lines;
+  });
+
+  const personLines = personBlocks.flatMap((block, i) =>
+    i < personBlocks.length - 1 ? [...block, ""] : block,
+  );
+
+  const lines = ["📺 YouTube payment reminder"];
+  if (options.feeAnnouncement) {
+    lines.push("", options.feeAnnouncement);
+  }
+  lines.push("", ...personLines);
 
   return lines.join("\n");
 }
+
+/** Telegram photo captions use HTML for reminder formatting. */
+export const REMINDER_PARSE_MODE = "HTML" as const;

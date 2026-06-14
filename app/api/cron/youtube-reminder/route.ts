@@ -4,11 +4,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { InputFile } from "grammy";
 import { bot } from "@/lib/bot";
 import {
-  getConfig,
   insertCurrentMonthForAll,
-  getUnpaidMonthCountsAll,
   buildReminderMessage,
+  REMINDER_PARSE_MODE,
 } from "@/lib/youtube-subscription";
+import { getAllDepositTotals } from "@/lib/deposit";
+import {
+  getYoutubeReminderOwings,
+  resolveYoutubeFeeAnnouncement,
+  markYoutubeFeeScheduleAnnounced,
+} from "@/lib/youtube-fee";
 
 export const dynamic = "force-dynamic";
 
@@ -33,18 +38,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const monthlyFee = parseFloat(await getConfig("youtube_monthly_fee"));
-
   // dry_run: preview current state without inserting new month
   if (!dryRun) await insertCurrentMonthForAll();
-  const members = await getUnpaidMonthCountsAll();
+  const [owings, depositTotals, feeAnnouncement] = await Promise.all([
+    getYoutubeReminderOwings(),
+    getAllDepositTotals(),
+    resolveYoutubeFeeAnnouncement(),
+  ]);
 
   // Send QR photo with the debt summary caption
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
-  const caption = buildReminderMessage(members, monthlyFee);
+  const caption = buildReminderMessage(owings, depositTotals, {
+    feeAnnouncement: feeAnnouncement.text ?? undefined,
+  });
 
-  await bot.api.sendPhoto(groupChatId, file, { caption });
+  await bot.api.sendPhoto(groupChatId, file, {
+    caption,
+    parse_mode: REMINDER_PARSE_MODE,
+  });
+
+  if (!dryRun && feeAnnouncement.scheduleIdToMark !== null) {
+    await markYoutubeFeeScheduleAnnounced(feeAnnouncement.scheduleIdToMark);
+  }
 
   return NextResponse.json({ ok: true, dry_run: dryRun, chat_id: groupChatId });
 }
