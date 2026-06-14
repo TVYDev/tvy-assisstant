@@ -27,6 +27,23 @@ import {
   updateDebtItem,
 } from "./debt";
 import {
+  startSession,
+  getSession,
+  cancelSession,
+  advanceSession,
+  submitQuickLog,
+  splitFitCommandArgs,
+  getLogHistory,
+  formatLogHistory,
+  isGymMotivationReminderEnabled,
+  setGymMotivationReminderEnabled,
+  formatGymMotivationReminderStatus,
+  parseFitnessLogCallback,
+  FITNESS_LOG_CALLBACK_PREFIX,
+  type AdvanceSessionResult,
+  type FitnessLogKeyboard,
+} from "./fitness-log";
+import {
   addDeposit,
   reduceDeposit,
   InsufficientDepositError,
@@ -98,15 +115,29 @@ const NOT_BOSS_REPLIES = [
   "🚫 Admin vibes detected. Boss badge not found. Try again never. 😂",
   "Dino squints at you... 🦕 Nope. Not the boss. Not even close.",
   "🔒 Command locked. Only Vannyou has the golden key. 🗝️",
-  "🦕 សូមអភ័យទោស — Dino មាន boss តែមួយគត់ ហើយមិនមែនអ្នកទេ! 😂",
-  "🚫 មិនមានសិទ្ធិទេ! សូមសាក Vannyou ណា បង 🙏",
-  "🦖 Boss តែមួយ: Vannyou. You? Nice try. 😏",
 ];
 
 function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   const msg =
     NOT_BOSS_REPLIES[Math.floor(Math.random() * NOT_BOSS_REPLIES.length)];
   return ctx.reply(msg);
+}
+
+function fitnessLogReplyOptions(result: AdvanceSessionResult) {
+  if (!result.keyboard) return undefined;
+  return { reply_markup: { inline_keyboard: result.keyboard } };
+}
+
+async function replyFitnessLogResult(
+  ctx: {
+    reply: (
+      text: string,
+      options?: { reply_markup?: { inline_keyboard: FitnessLogKeyboard } },
+    ) => Promise<unknown>;
+  },
+  result: AdvanceSessionResult,
+) {
+  await ctx.reply(result.reply, fitnessLogReplyOptions(result));
 }
 
 function pick<T>(arr: T[]): T {
@@ -122,9 +153,6 @@ const QR_CAPTIONS = [
   "💳 Payment portal open! Scan, pay, become Dino's favorite human today. 🦕⭐",
   "🦖 The QR code is hungry. Feed it money for Vannyou. Dino is supervising.",
   "📲 Scan → Pay → Peace. It's that simple. Dino believes in you. 🦕",
-  "💸 Scan KHQR បង់ Vannyou ណា! Dino កំពុងមើលហើយ 👀🦕",
-  "🙏 សូម scan QR បង់ប្រាក់ — Nailong ជឿថាអ្នកធ្វើបាន! 💸",
-  "📲 Scan រួចបង់ — សាមញ្ញប៉ុណ្ណានេះ! Dino approves 🦖",
 ];
 
 const QR_NO_DEBT_CAPTIONS = [
@@ -136,8 +164,6 @@ const QR_NO_DEBT_CAPTIONS = [
   "🏆 Debt-free champion! No payment needed, but the QR is here if you're feeling philanthropic. 🦖",
   "✨ Zero balance, full vibes. QR attached for optional generosity. Dino won't judge. 🦕",
   "🎁 Nothing owed — but if you want to gift Vannyou anyway, Dino won't stop you. 😏",
-  "✨ គ្មានជំពាក់! QR នៅទីនេះ បើចង់ជួយ Vannyou ក៏បាន 🦕",
-  "🏆 ស្អាត! No debts — scan QR បើមានចិត្ត generous 😇",
 ];
 
 const NO_RECORD_REPLIES = [
@@ -149,29 +175,21 @@ const NO_RECORD_REPLIES = [
   "👻 Dino checked twice. No record. Either you're invisible or very lucky. 😂",
   "📭 Empty inbox! No debts, no YouTube, no deposit. Who ARE you? 🦕",
   "🦖 Dino shrugs. Nothing on file. Tell Vannyou to register you if this looks wrong.",
-  "🔍 រកមិនឃើញទេ! ថ្មីមែន? សូមប្រាប់ Vannyou ឲ្យ add អ្នក 🦕",
-  "👻 គ្មានកំណត់ត្រា — អ្នក ghost ឬសំណាងណាស់? 😂",
 ];
 
 const YT_PAID_MSGS_ELDER = [
   (mention: string, month: string) =>
-    `🙏 អរគុណច្រើន ${mention} បង for paying YouTube (${month})! You are the most reliable one here, as always! 🎉`,
+    `🙏 Thank you ${mention} bong for paying YouTube (${month})! You are the most reliable one here, as always! 🎉`,
   (mention: string, month: string) =>
-    `✨ ${mention} បង came through again for ${month}! Consistent king/queen energy. We appreciate you! 🙌`,
+    `✨ ${mention} bong came through again for ${month}! Consistent king/queen energy. We appreciate you! 🙌`,
   (mention: string, month: string) =>
-    `💛 Thank you ${mention} បង! YouTube ${month} is settled — you never disappoint! 🙏`,
+    `💛 Thank you ${mention} bong! YouTube ${month} is settled — you never disappoint! 🙏`,
   (mention: string, month: string) =>
-    `🌟 ${mention} បង paid for ${month}! As expected from the most dependable one in the group. អរគុណ! 🎊`,
+    `🌟 ${mention} bong paid for ${month}! As expected from the most dependable one in the group. Thank you! 🎊`,
   (mention: string, month: string) =>
-    `🙏 ${mention} បង settled ${month} — the group is lucky to have you! 💛`,
+    `🙏 ${mention} bong settled ${month} — the group is lucky to have you! 💛`,
   (mention: string, month: string) =>
-    `✅ ${mention} បង paid YouTube ${month}! Reliable as always. អរគុណច្រើន! 🙌`,
-  (mention: string, month: string) =>
-    `🙏 អរគុណច្រើន ${mention} បង! YouTube ${month} បានបង់ហើយ — dependable as always! 🎉`,
-  (mention: string, month: string) =>
-    `💛 ${mention} បង បានបង់ YouTube ${month} ហើយ! ក្រុមយើងសំណាងមានអ្នក 🙏`,
-  (mention: string, month: string) =>
-    `✨ អរគុណ ${mention} បង — ${month} settled! You never miss. 🌟`,
+    `✅ ${mention} bong paid YouTube ${month}! Reliable as always. Much appreciated! 🙌`,
 ];
 
 const YT_PAID_MSGS = [
@@ -192,28 +210,20 @@ const YT_PAID_MSGS = [
   (mention: string, month: string) =>
     `🎊 ${mention} cleared ${month}! The subscription gods are pleased. Dino is pleased. 🦕`,
   (mention: string, month: string) =>
-    `🙏 អរគុណ ${mention}! YouTube ${month} paid — Dino ភ្ញាក់ផ្អើល (in a good way) 😂`,
-  (mention: string, month: string) =>
-    `✅ ${mention} បានបង់ ${month} ហើយ! អរគុណណា — hall of fame updated 🏛️`,
-  (mention: string, month: string) =>
     `💸 Money in! ${mention} paid YouTube ${month}. Vannyou smiling, Dino smiling 🥳`,
 ];
 
 const YT_UNPAID_MSGS_ELDER = [
   (mention: string, month: string) =>
-    `😊 Hey ${mention} បង, just a gentle heads-up — YouTube for ${month} is showing unpaid. No rush, whenever you're free! 🙏`,
+    `😊 Hey ${mention} bong, just a gentle heads-up — YouTube for ${month} is showing unpaid. No rush, whenever you're free! 🙏`,
   (mention: string, month: string) =>
-    `🙏 ${mention} បង, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
+    `🙏 ${mention} bong, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
   (mention: string, month: string) =>
-    `💛 Just a friendly nudge for ${mention} បង — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
+    `💛 Just a friendly nudge for ${mention} bong — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
   (mention: string, month: string) =>
-    `🌸 ${mention} បង, gentle reminder that ${month} YouTube is still open. No pressure at all! 🙏`,
+    `🌸 ${mention} bong, gentle reminder that ${month} YouTube is still open. No pressure at all! 🙏`,
   (mention: string, month: string) =>
-    `😊 ${mention} បង — whenever you have a moment, ${month} YouTube is pending. Thank you! 💛`,
-  (mention: string, month: string) =>
-    `🙏 ${mention} បង — YouTube ${month} មិនទាន់បង់ទេ. ពេលស្រួលសូមបង់ណា 😊`,
-  (mention: string, month: string) =>
-    `💛 សូមរំលឹកដែល ${mention} បង — ${month} YouTube នៅ pending. No rush! 🙏`,
+    `😊 ${mention} bong — whenever you have a moment, ${month} YouTube is pending. Thank you! 💛`,
 ];
 
 const YT_UNPAID_MSGS = [
@@ -233,10 +243,6 @@ const YT_UNPAID_MSGS = [
     `📺 ${mention} — ${month} YouTube payment still pending. Dino sends his regards. 🦕`,
   (mention: string, month: string) =>
     `💸 Friendly ping ${mention}: ${month} YouTube ain't paid yet. Dino is just the messenger! 😅`,
-  (mention: string, month: string) =>
-    `👀 ${mention} — YouTube ${month} មិនទាន់បង់ទេ! Dino ចាំណា 🦕`,
-  (mention: string, month: string) =>
-    `😅 អូ ${mention}... ${month} YouTube នៅតែ unpaid. បង់ណា បង! 💸`,
   (mention: string, month: string) =>
     `⏰ ${mention} — tick tock! ${month} YouTube still open. Dino remembers everything 🦖📋`,
 ];
@@ -1187,6 +1193,144 @@ bot.command("listusers", async (ctx) => {
 });
 
 // Owner-only: /help — list all commands
+bot.command("fit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  if (!args) {
+    const { reply } = await startSession(ctx.from.id);
+    return ctx.reply(reply);
+  }
+
+  const split = splitFitCommandArgs(args);
+  if (!split.ok) {
+    return ctx.reply(split.error);
+  }
+
+  if (!split.rest) {
+    const { reply } = await startSession(ctx.from.id, split.logDate);
+    return ctx.reply(reply);
+  }
+
+  const result = await submitQuickLog(ctx.from.id, args);
+  return ctx.reply(result.reply);
+});
+
+bot.command("cancelfit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    return ctx.reply("No active log session to cancel.");
+  }
+
+  await cancelSession(ctx.from.id);
+  return ctx.reply("Log session cancelled.");
+});
+
+bot.command("fithistory", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  const days = args ? parseInt(args, 10) : 30;
+  if (args && (Number.isNaN(days) || days <= 0)) {
+    return ctx.reply("Usage: /fithistory [days]\nExample: /fithistory 30");
+  }
+
+  const logs = await getLogHistory(days);
+  return ctx.reply(formatLogHistory(logs, days));
+});
+
+bot.command("gymreminder", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const arg = (ctx.match?.trim() ?? "").toLowerCase();
+
+  if (!arg) {
+    const enabled = await isGymMotivationReminderEnabled();
+    return ctx.reply(
+      `${formatGymMotivationReminderStatus(enabled)}\n\n` +
+        "Toggle with:\n" +
+        "/gymreminder on\n" +
+        "/gymreminder off",
+    );
+  }
+
+  if (arg === "on") {
+    await setGymMotivationReminderEnabled(true);
+    return ctx.reply(
+      "✅ " + formatGymMotivationReminderStatus(true) + " 🦕",
+    );
+  }
+
+  if (arg === "off") {
+    await setGymMotivationReminderEnabled(false);
+    return ctx.reply(
+      "✅ " + formatGymMotivationReminderStatus(false) + " 🦕",
+    );
+  }
+
+  return ctx.reply(
+    "Usage:\n/gymreminder — show status\n/gymreminder on\n/gymreminder off",
+  );
+});
+
+bot.on("message:text", async (ctx, next) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return next();
+  }
+
+  const text = ctx.message.text.trim();
+  if (text.startsWith("/")) {
+    return next();
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    return next();
+  }
+
+  const result = await advanceSession(ctx.from.id, text);
+  await replyFitnessLogResult(ctx, result);
+});
+
+bot.on("callback_query:data", async (ctx, next) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return next();
+  }
+
+  const data = ctx.callbackQuery.data;
+  if (!data.startsWith(`${FITNESS_LOG_CALLBACK_PREFIX}:`)) {
+    return next();
+  }
+
+  const input = parseFitnessLogCallback(data);
+  if (!input) {
+    await ctx.answerCallbackQuery({ text: "Invalid button." });
+    return;
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    await ctx.answerCallbackQuery({
+      text: "Session expired. Send /fit to start.",
+    });
+    return;
+  }
+
+  const result = await advanceSession(ctx.from.id, input);
+  await ctx.answerCallbackQuery();
+  await replyFitnessLogResult(ctx, result);
+});
+
 bot.command("help", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return ctx.reply(
@@ -1275,6 +1419,26 @@ bot.command("help", async (ctx) => {
       "    → e.g. /updateuser BSR first_name Sophia\n" +
       "    → e.g. /updateuser BSR telegram_username johndoe\n" +
       "    → e.g. /updateuser BSR telegram_user_id 123456789\n" +
-      "    → Shortcode change cascades all records",
+      "    → Shortcode change cascades all records\n" +
+      "\n" +
+      "🏋️ Fitness logging:\n" +
+      "  /fit\n" +
+      "    → Guided morning log for today\n" +
+      "  /fit YYYY-MM-DD\n" +
+      "    → Guided backdate for a missed morning\n" +
+      "  /fit <weight> rest\n" +
+      "    → Quick rest-day log, e.g. /fit 75.5 rest\n" +
+      "  /fit <weight> skip\n" +
+      "    → Quick skip log, e.g. /fit 75.5 skip\n" +
+      "  /fit <weight> yes <session> <minutes>\n" +
+      "    → Quick gym log, e.g. /fit 75.5 yes chest 45\n" +
+      "  /fit YYYY-MM-DD <weight> ...\n" +
+      "    → Quick backdate, e.g. /fit 2026-06-12 75.5 rest\n" +
+      "  /cancelfit\n" +
+      "    → Cancel an in-progress log session\n" +
+      "  /fithistory [days]\n" +
+      "    → Gym dot grid + recent logs (default 30 days)\n" +
+      "  /gymreminder [on|off]\n" +
+      "    → Weekday 4:45 PM gym motivation DM (default on)",
   );
 });

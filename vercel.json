@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/youtube-reminder",
       "schedule": "0 1 1 * *"
+    },
+    {
+      "path": "/api/cron/fitness-reminder",
+      "schedule": "1 1 * * *"
+    },
+    {
+      "path": "/api/cron/gym-motivation",
+      "schedule": "45 9 * * 1-5"
     }
   ]
 }
