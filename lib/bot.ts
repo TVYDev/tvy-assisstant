@@ -1244,7 +1244,7 @@ bot.command("fithistory", async (ctx) => {
   }
 
   const logs = await getLogHistory(days);
-  return ctx.reply(formatLogHistory(logs, days));
+  return ctx.reply(formatLogHistory(logs, days), { parse_mode: "HTML" });
 });
 
 bot.command("gymreminder", async (ctx) => {

@@ -141,8 +141,8 @@ const GRID_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as con
 const GRID_GYM = "🟩";
 const GRID_REST = "⬜";
 const GRID_SKIP = "🟧";
-const GRID_UNKNOWN = "·";
-const GRID_OUTSIDE = " ";
+const GRID_UNKNOWN = "⬛";
+const GRID_OUTSIDE = "  ";
 
 export function formatGymActivityGrid(
   logs: DailyFitnessLog[],
@@ -197,15 +197,15 @@ export function formatGymActivityGrid(
   }
 
   const gridLines = GRID_DAY_LABELS.map((label, row) => {
-    const cells = columns.map((column) => column[row]).join("");
-    return `${label} ${cells}`;
+    const cells = columns.map((column) => column[row]).join(" ");
+    return `${label}  ${cells}`;
   });
 
   return (
     `🏋️ Gym activity (last ${safeDays} days)\n` +
     `${GRID_GYM} gym  ${GRID_REST} rest  ${GRID_SKIP} skip  ${GRID_UNKNOWN} no log\n` +
     `Gym ${gymCount} · Rest ${restCount} · Skip ${skipCount} · No log ${unknownCount}\n\n` +
-    gridLines.join("\n")
+    `<pre>${gridLines.join("\n")}</pre>`
   );
 }
 
