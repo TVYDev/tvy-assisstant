@@ -115,9 +115,6 @@ const NOT_BOSS_REPLIES = [
   "🚫 Admin vibes detected. Boss badge not found. Try again never. 😂",
   "Dino squints at you... 🦕 Nope. Not the boss. Not even close.",
   "🔒 Command locked. Only Vannyou has the golden key. 🗝️",
-  "🦕 សូមអភ័យទោស — Dino មាន boss តែមួយគត់ ហើយមិនមែនអ្នកទេ! 😂",
-  "🚫 មិនមានសិទ្ធិទេ! សូមសាក Vannyou ណា បង 🙏",
-  "🦖 Boss តែមួយ: Vannyou. You? Nice try. 😏",
 ];
 
 function notBossReply(ctx: { reply: (msg: string) => unknown }) {
@@ -156,9 +153,6 @@ const QR_CAPTIONS = [
   "💳 Payment portal open! Scan, pay, become Dino's favorite human today. 🦕⭐",
   "🦖 The QR code is hungry. Feed it money for Vannyou. Dino is supervising.",
   "📲 Scan → Pay → Peace. It's that simple. Dino believes in you. 🦕",
-  "💸 Scan KHQR បង់ Vannyou ណា! Dino កំពុងមើលហើយ 👀🦕",
-  "🙏 សូម scan QR បង់ប្រាក់ — Nailong ជឿថាអ្នកធ្វើបាន! 💸",
-  "📲 Scan រួចបង់ — សាមញ្ញប៉ុណ្ណានេះ! Dino approves 🦖",
 ];
 
 const QR_NO_DEBT_CAPTIONS = [
@@ -170,8 +164,6 @@ const QR_NO_DEBT_CAPTIONS = [
   "🏆 Debt-free champion! No payment needed, but the QR is here if you're feeling philanthropic. 🦖",
   "✨ Zero balance, full vibes. QR attached for optional generosity. Dino won't judge. 🦕",
   "🎁 Nothing owed — but if you want to gift Vannyou anyway, Dino won't stop you. 😏",
-  "✨ គ្មានជំពាក់! QR នៅទីនេះ បើចង់ជួយ Vannyou ក៏បាន 🦕",
-  "🏆 ស្អាត! No debts — scan QR បើមានចិត្ត generous 😇",
 ];
 
 const NO_RECORD_REPLIES = [
@@ -183,29 +175,21 @@ const NO_RECORD_REPLIES = [
   "👻 Dino checked twice. No record. Either you're invisible or very lucky. 😂",
   "📭 Empty inbox! No debts, no YouTube, no deposit. Who ARE you? 🦕",
   "🦖 Dino shrugs. Nothing on file. Tell Vannyou to register you if this looks wrong.",
-  "🔍 រកមិនឃើញទេ! ថ្មីមែន? សូមប្រាប់ Vannyou ឲ្យ add អ្នក 🦕",
-  "👻 គ្មានកំណត់ត្រា — អ្នក ghost ឬសំណាងណាស់? 😂",
 ];
 
 const YT_PAID_MSGS_ELDER = [
   (mention: string, month: string) =>
-    `🙏 អរគុណច្រើន ${mention} បង for paying YouTube (${month})! You are the most reliable one here, as always! 🎉`,
+    `🙏 Thank you ${mention} bong for paying YouTube (${month})! You are the most reliable one here, as always! 🎉`,
   (mention: string, month: string) =>
-    `✨ ${mention} បង came through again for ${month}! Consistent king/queen energy. We appreciate you! 🙌`,
+    `✨ ${mention} bong came through again for ${month}! Consistent king/queen energy. We appreciate you! 🙌`,
   (mention: string, month: string) =>
-    `💛 Thank you ${mention} បង! YouTube ${month} is settled — you never disappoint! 🙏`,
+    `💛 Thank you ${mention} bong! YouTube ${month} is settled — you never disappoint! 🙏`,
   (mention: string, month: string) =>
-    `🌟 ${mention} បង paid for ${month}! As expected from the most dependable one in the group. អរគុណ! 🎊`,
+    `🌟 ${mention} bong paid for ${month}! As expected from the most dependable one in the group. Thank you! 🎊`,
   (mention: string, month: string) =>
-    `🙏 ${mention} បង settled ${month} — the group is lucky to have you! 💛`,
+    `🙏 ${mention} bong settled ${month} — the group is lucky to have you! 💛`,
   (mention: string, month: string) =>
-    `✅ ${mention} បង paid YouTube ${month}! Reliable as always. អរគុណច្រើន! 🙌`,
-  (mention: string, month: string) =>
-    `🙏 អរគុណច្រើន ${mention} បង! YouTube ${month} បានបង់ហើយ — dependable as always! 🎉`,
-  (mention: string, month: string) =>
-    `💛 ${mention} បង បានបង់ YouTube ${month} ហើយ! ក្រុមយើងសំណាងមានអ្នក 🙏`,
-  (mention: string, month: string) =>
-    `✨ អរគុណ ${mention} បង — ${month} settled! You never miss. 🌟`,
+    `✅ ${mention} bong paid YouTube ${month}! Reliable as always. Much appreciated! 🙌`,
 ];
 
 const YT_PAID_MSGS = [
@@ -226,28 +210,20 @@ const YT_PAID_MSGS = [
   (mention: string, month: string) =>
     `🎊 ${mention} cleared ${month}! The subscription gods are pleased. Dino is pleased. 🦕`,
   (mention: string, month: string) =>
-    `🙏 អរគុណ ${mention}! YouTube ${month} paid — Dino ភ្ញាក់ផ្អើល (in a good way) 😂`,
-  (mention: string, month: string) =>
-    `✅ ${mention} បានបង់ ${month} ហើយ! អរគុណណា — hall of fame updated 🏛️`,
-  (mention: string, month: string) =>
     `💸 Money in! ${mention} paid YouTube ${month}. Vannyou smiling, Dino smiling 🥳`,
 ];
 
 const YT_UNPAID_MSGS_ELDER = [
   (mention: string, month: string) =>
-    `😊 Hey ${mention} បង, just a gentle heads-up — YouTube for ${month} is showing unpaid. No rush, whenever you're free! 🙏`,
+    `😊 Hey ${mention} bong, just a gentle heads-up — YouTube for ${month} is showing unpaid. No rush, whenever you're free! 🙏`,
   (mention: string, month: string) =>
-    `🙏 ${mention} បង, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
+    `🙏 ${mention} bong, Dino just wanted to let you know YouTube ${month} is still pending. Take your time! 😊`,
   (mention: string, month: string) =>
-    `💛 Just a friendly nudge for ${mention} បង — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
+    `💛 Just a friendly nudge for ${mention} bong — ${month} YouTube hasn't been settled yet. No worries, whenever suits you! 🙏`,
   (mention: string, month: string) =>
-    `🌸 ${mention} បង, gentle reminder that ${month} YouTube is still open. No pressure at all! 🙏`,
+    `🌸 ${mention} bong, gentle reminder that ${month} YouTube is still open. No pressure at all! 🙏`,
   (mention: string, month: string) =>
-    `😊 ${mention} បង — whenever you have a moment, ${month} YouTube is pending. Thank you! 💛`,
-  (mention: string, month: string) =>
-    `🙏 ${mention} បង — YouTube ${month} មិនទាន់បង់ទេ. ពេលស្រួលសូមបង់ណា 😊`,
-  (mention: string, month: string) =>
-    `💛 សូមរំលឹកដែល ${mention} បង — ${month} YouTube នៅ pending. No rush! 🙏`,
+    `😊 ${mention} bong — whenever you have a moment, ${month} YouTube is pending. Thank you! 💛`,
 ];
 
 const YT_UNPAID_MSGS = [
@@ -267,10 +243,6 @@ const YT_UNPAID_MSGS = [
     `📺 ${mention} — ${month} YouTube payment still pending. Dino sends his regards. 🦕`,
   (mention: string, month: string) =>
     `💸 Friendly ping ${mention}: ${month} YouTube ain't paid yet. Dino is just the messenger! 😅`,
-  (mention: string, month: string) =>
-    `👀 ${mention} — YouTube ${month} មិនទាន់បង់ទេ! Dino ចាំណា 🦕`,
-  (mention: string, month: string) =>
-    `😅 អូ ${mention}... ${month} YouTube នៅតែ unpaid. បង់ណា បង! 💸`,
   (mention: string, month: string) =>
     `⏰ ${mention} — tick tock! ${month} YouTube still open. Dino remembers everything 🦖📋`,
 ];
