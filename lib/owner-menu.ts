@@ -46,11 +46,23 @@ export const OWNER_MENU_STICKERS_TEXT =
   "Configure stickers sent after public commands.\n" +
   "Use the buttons below, or open <b>Stickers</b> from the main menu.";
 
+export const OWNER_MENU_FIT_TEXT =
+  "🏋️ <b>Fitness logging</b>\n\n" +
+  "<code>/fit</code> — guided log for today\n" +
+  "<code>/fit YYYY-MM-DD</code> — guided backdate\n" +
+  "<code>/fit 75.5 rest</code> — quick rest day\n" +
+  "<code>/fit 75.5 skip</code> — quick skip\n" +
+  "<code>/fit 75.5 yes chest 45</code> — quick gym log\n" +
+  "<code>/fithistory [days]</code> — dot grid + recent logs\n" +
+  "<code>/gymreminder on|off</code> — weekday 4:45 PM nudge\n" +
+  "<code>/cancelfit</code> — cancel in-progress session";
+
 export const OWNER_MENU_HELP_TEXT =
   "📖 <b>Quick tip</b>\n\n" +
   "Type <code>/help</code> for the full command list.\n" +
   "Type <code>/menu</code> anytime to reopen this panel.\n" +
-  "Use <b>Stickers</b> in the menu to configure follow-up stickers.\n\n" +
+  "Use <b>Stickers</b> in the menu to configure follow-up stickers.\n" +
+  "Use <b>Fit</b> for daily logging shortcuts.\n\n" +
   "Public users only see: /owe /qr /about /help";
 
 const PUBLIC_COMMANDS = [
@@ -73,6 +85,10 @@ const OWNER_COMMANDS = [
   { command: "ytfees", description: "List YouTube fee schedules" },
   { command: "previewowe", description: "Preview /owe for a shortcode" },
   { command: "stickerid", description: "Get Telegram sticker file_id" },
+  { command: "fit", description: "Log daily weight and gym session" },
+  { command: "fithistory", description: "View fitness log history" },
+  { command: "gymreminder", description: "Toggle gym motivation reminder" },
+  { command: "cancelfit", description: "Cancel in-progress fitness log" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
 ] as const;
@@ -88,6 +104,7 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
     .text("🔍 Previews", "om:prev")
     .text("🎭 Stickers", "om:stickers")
     .row()
+    .text("🏋️ Fit", "om:fit")
     .text("📖 Help", "om:help");
 }
 
@@ -121,6 +138,20 @@ export function ownerUserMenuKeyboard(): InlineKeyboard {
 export function ownerPreviewMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("🔔 YT reminder", "om:run:previewytreminder")
+    .row()
+    .text("« Main menu", "om:main");
+}
+
+export function ownerFitMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("📝 Log today", "om:run:fit")
+    .text("📊 History", "om:run:fithistory")
+    .row()
+    .text("🔔 Reminder status", "om:run:gymreminder")
+    .text("❌ Cancel session", "om:run:cancelfit")
+    .row()
+    .text("✅ Reminder ON", "om:run:gymreminder:on")
+    .text("🔕 Reminder OFF", "om:run:gymreminder:off")
     .row()
     .text("« Main menu", "om:main");
 }
