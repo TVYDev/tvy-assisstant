@@ -14,8 +14,8 @@ import {
 } from "./youtube-subscription";
 import {
   buildOweMessage,
-  calculateNetOwed,
   resolveDebtForTelegramUser,
+  resolveNetOwedForTelegramUser,
   resolveSubscriptionMemberForTelegramUser,
 } from "./owe-message";
 import {
@@ -92,14 +92,141 @@ import {
   promptShortcodePick,
   parseShortcodeCallbackData,
 } from "./shortcode-prompt";
+import {
+  assignStickerToCommand,
+  buildCommandStickerDetailText,
+  buildCommandStickersOverviewText,
+  clearStickerSetupPending,
+  getCommandFollowupStickerConfig,
+  getStickerSetupPending,
+  maybeSendCommandFollowupSticker,
+  ownerStickerCommandKeyboard,
+  ownerStickersMenuKeyboard,
+  parseConfigurableCommandKey,
+  setStickerSetupPending,
+  updateCommandFollowupStickerRule,
+  type ConfigurableCommandKey,
+} from "./command-followup-stickers";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
+
+async function refreshStickerCommandPanel(
+  ctx: {
+    editMessageText: (
+      text: string,
+      options?: {
+        parse_mode?: "HTML";
+        reply_markup?: ReturnType<typeof ownerStickerCommandKeyboard>;
+      },
+    ) => Promise<unknown>;
+    reply: (
+      text: string,
+      options?: {
+        parse_mode?: "HTML";
+        reply_markup?: ReturnType<typeof ownerStickerCommandKeyboard>;
+      },
+    ) => Promise<unknown>;
+  },
+  command: ConfigurableCommandKey,
+) {
+  const [config, pending] = await Promise.all([
+    getCommandFollowupStickerConfig(),
+    getStickerSetupPending(),
+  ]);
+  const text = buildCommandStickerDetailText(
+    command,
+    config[command],
+    pending === command,
+  );
+  const keyboard = ownerStickerCommandKeyboard(command);
+
+  try {
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  } catch {
+    await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
+  }
+}
+
+async function handleStickerMenuCallback(
+  ctx: {
+    editMessageText: (
+      text: string,
+      options?: {
+        parse_mode?: "HTML";
+        reply_markup?: ReturnType<typeof ownerStickerCommandKeyboard>;
+      },
+    ) => Promise<unknown>;
+    reply: (
+      text: string,
+      options?: {
+        parse_mode?: "HTML";
+        reply_markup?: ReturnType<typeof ownerStickerCommandKeyboard>;
+      },
+    ) => Promise<unknown>;
+  },
+  data: string,
+) {
+  const parts = data.split(":");
+  const command = parseConfigurableCommandKey(parts[2] ?? "");
+  if (!command) return;
+
+  const action = parts[3];
+
+  if (!action) {
+    await refreshStickerCommandPanel(ctx, command);
+    return;
+  }
+
+  switch (action) {
+    case "toggle": {
+      const config = await getCommandFollowupStickerConfig();
+      await updateCommandFollowupStickerRule(command, {
+        enabled: !config[command].enabled,
+      });
+      await refreshStickerCommandPanel(ctx, command);
+      return;
+    }
+    case "set":
+      await setStickerSetupPending(command);
+      await ctx.reply(
+        `Send the sticker for <b>${command}</b> in our private chat.`,
+        { parse_mode: "HTML" },
+      );
+      await refreshStickerCommandPanel(ctx, command);
+      return;
+    case "clear":
+      await updateCommandFollowupStickerRule(command, { stickerId: null });
+      await clearStickerSetupPending();
+      await refreshStickerCommandPanel(ctx, command);
+      return;
+    case "min": {
+      const raw = parts[4];
+      const minNetOwed =
+        raw === "none" ? null : Number.parseFloat(raw ?? "");
+      if (raw !== "none" && Number.isNaN(minNetOwed)) return;
+      await updateCommandFollowupStickerRule(command, { minNetOwed });
+      await refreshStickerCommandPanel(ctx, command);
+      return;
+    }
+  }
+}
 
 const OWNER_ID = parseInt(process.env.OWNER_TELEGRAM_ID ?? "0");
 
 function isOwner(ctx: { from?: { id: number } }): boolean {
   return OWNER_ID > 0 && ctx.from?.id === OWNER_ID;
+}
+
+function isOwnerPrivateChat(ctx: {
+  from?: { id: number };
+  chat?: { type: string; id: number };
+}): boolean {
+  return (
+    isOwner(ctx) &&
+    ctx.chat?.type === "private" &&
+    ctx.chat.id === OWNER_ID
+  );
 }
 
 const NOT_BOSS_REPLIES = [
@@ -121,6 +248,50 @@ function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   const msg =
     NOT_BOSS_REPLIES[Math.floor(Math.random() * NOT_BOSS_REPLIES.length)];
   return ctx.reply(msg);
+}
+
+function formatStickerInfo(sticker: {
+  file_id: string;
+  file_unique_id: string;
+  emoji?: string;
+  set_name?: string;
+  is_animated?: boolean;
+  is_video?: boolean;
+}): string {
+  const lines = [
+    "🏷️ Sticker file_id (tap to copy):",
+    `<code>${sticker.file_id}</code>`,
+    "",
+    `Unique ID: <code>${sticker.file_unique_id}</code>`,
+  ];
+  if (sticker.emoji) lines.push(`Emoji: ${sticker.emoji}`);
+  if (sticker.set_name) lines.push(`Set: ${sticker.set_name}`);
+  const kind = sticker.is_video
+    ? "video"
+    : sticker.is_animated
+      ? "animated"
+      : "static";
+  lines.push(`Type: ${kind}`);
+  return lines.join("\n");
+}
+
+async function replyStickerInfo(
+  ctx: {
+    reply: (
+      text: string,
+      options?: { parse_mode?: "HTML" },
+    ) => Promise<unknown>;
+  },
+  sticker: {
+    file_id: string;
+    file_unique_id: string;
+    emoji?: string;
+    set_name?: string;
+    is_animated?: boolean;
+    is_video?: boolean;
+  },
+) {
+  return ctx.reply(formatStickerInfo(sticker), { parse_mode: "HTML" });
 }
 
 function fitnessLogReplyOptions(result: AdvanceSessionResult) {
@@ -283,14 +454,12 @@ bot.command(
         "\n" +
         "I may have a round belly and a silly face, but my memory for unpaid debts is SHARP. 🦕🔪",
     );
-    return ctx.replyWithSticker(
-      "CAACAgUAAxkBAAMHadp2j926kQ_JshGZsD4LxsQ-sKsAAnEFAAK9lPBWUYQTpHJGzMM7BA",
-    );
+    await maybeSendCommandFollowupSticker(ctx, "start");
   },
 );
 
-bot.command("about", (ctx) => {
-  return ctx.reply(
+bot.command("about", async (ctx) => {
+  await ctx.reply(
     `🦕 *About Dino (aka Nailong)* — v${version}\n` +
       "\n" +
       "Meet *Dino* — aka Nailong, the lovable dino with a round belly, silly expressions, and a big heart! 🫶\n" +
@@ -317,6 +486,7 @@ bot.command("about", (ctx) => {
       `🔖 Version: ${version} | Built with 🦕 by Vannyou`,
     { parse_mode: "Markdown" },
   );
+  await maybeSendCommandFollowupSticker(ctx, "about");
 });
 
 bot.command("qr", async (ctx) => {
@@ -324,23 +494,7 @@ bot.command("qr", async (ctx) => {
   const username = ctx.from?.username ?? "";
   const firstName = ctx.from?.first_name ?? "friend";
 
-  const [record, member, deposit] = await Promise.all([
-    resolveDebtForTelegramUser(userId, username),
-    resolveSubscriptionMemberForTelegramUser(userId, username),
-    resolveDepositForTelegramUser(userId, username),
-  ]);
-
-  const ytOwing =
-    member && member.unpaid_count > 0
-      ? await getUnpaidYoutubeOwing(member.id)
-      : { total: 0, months: [] };
-
-  const net = calculateNetOwed({
-    owes_me: record?.owes_me ?? 0,
-    i_owe: record?.i_owe ?? 0,
-    deposit,
-    subOwed: ytOwing.total,
-  });
+  const net = await resolveNetOwedForTelegramUser(userId, username);
 
   const qrPath = path.join(process.cwd(), "data", "qr.png");
   const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
@@ -348,10 +502,12 @@ bot.command("qr", async (ctx) => {
   if (net > 0) {
     const oweMessage = await buildOweMessage(userId, username, firstName);
     const caption = `${pick(QR_CAPTIONS)}${oweMessage ? `\n\n${oweMessage}` : ""}`;
-    return ctx.replyWithPhoto(file, { caption });
+    await ctx.replyWithPhoto(file, { caption });
+  } else {
+    await ctx.replyWithPhoto(file, { caption: pick(QR_NO_DEBT_CAPTIONS) });
   }
 
-  return ctx.replyWithPhoto(file, { caption: pick(QR_NO_DEBT_CAPTIONS) });
+  await maybeSendCommandFollowupSticker(ctx, "qr", { netOwed: net });
 });
 
 bot.command("owe", async (ctx) => {
@@ -369,7 +525,10 @@ bot.command("owe", async (ctx) => {
 
   const message = await buildOweMessage(userId, username, firstName);
   if (!message) return ctx.reply(pick(NO_RECORD_REPLIES));
-  return ctx.reply(message);
+
+  const net = await resolveNetOwedForTelegramUser(userId, username);
+  await ctx.reply(message);
+  await maybeSendCommandFollowupSticker(ctx, "owe", { netOwed: net });
 });
 
 // Owner-only: /adddebt <shortcode> <amount> <description>
@@ -998,6 +1157,11 @@ bot.callbackQuery(/^om:/, async (ctx) => {
   const data = ctx.callbackQuery.data;
   await ctx.answerCallbackQuery();
 
+  if (data.startsWith("om:sticker:")) {
+    await handleStickerMenuCallback(ctx, data);
+    return;
+  }
+
   const editSection = async (text: string, keyboard: ReturnType<typeof ownerMainMenuKeyboard>) => {
     try {
       await ctx.editMessageText(text, {
@@ -1031,6 +1195,14 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     case "om:help":
       await editSection(OWNER_MENU_HELP_TEXT, ownerBackMenuKeyboard());
       break;
+    case "om:stickers": {
+      const config = await getCommandFollowupStickerConfig();
+      await editSection(
+        buildCommandStickersOverviewText(config),
+        ownerStickersMenuKeyboard(),
+      );
+      break;
+    }
     case "om:pick:debts":
       await promptShortcodePick(ctx, "debts");
       break;
@@ -1115,6 +1287,41 @@ bot.command("previewowe", async (ctx) => {
   }
 
   return ctx.reply(message);
+});
+
+// Owner-only (private DM): /stickerid — show Telegram sticker file_id
+bot.command("stickerid", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  if (!isOwnerPrivateChat(ctx)) {
+    return ctx.reply("🦕 /stickerid only works in our private chat.");
+  }
+
+  const sticker = ctx.message?.reply_to_message?.sticker ?? null;
+  if (!sticker) {
+    return ctx.reply(
+      "Send me a sticker here, or reply to one with /stickerid.\n\n" +
+        "I'll reply with the file_id you can paste into bot code.",
+    );
+  }
+
+  return replyStickerInfo(ctx, sticker);
+});
+
+bot.on("message:sticker", async (ctx, next) => {
+  if (!isOwnerPrivateChat(ctx)) return next();
+
+  const pending = await getStickerSetupPending();
+  if (pending) {
+    await assignStickerToCommand(pending, ctx.message.sticker.file_id);
+    await clearStickerSetupPending();
+    await ctx.reply(
+      `✅ Saved follow-up sticker for <b>${pending}</b> and turned it ON.`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  await replyStickerInfo(ctx, ctx.message.sticker);
 });
 
 // Owner-only: /previewytreminder — preview monthly YouTube reminder in this chat
@@ -1244,7 +1451,7 @@ bot.command("fithistory", async (ctx) => {
   }
 
   const logs = await getLogHistory(days);
-  return ctx.reply(formatLogHistory(logs, days));
+  return ctx.reply(formatLogHistory(logs, days), { parse_mode: "HTML" });
 });
 
 bot.command("gymreminder", async (ctx) => {
@@ -1407,8 +1614,11 @@ bot.command("help", async (ctx) => {
       "    → Preview monthly YouTube reminder (QR + list) in this chat\n" +
       "  /previewowe <shortcode>\n" +
       "    → Preview /owe message for a user by shortcode\n" +
+      "  /stickerid\n" +
+      "    → Sticker file_id lookup (owner DM only)\n" +
       "  /menu\n" +
       "    → Admin button menu (owner only)\n" +
+      "    → Stickers section configures follow-ups for /start, /owe, /qr, /about\n" +
       "\n" +
       "👥 User management:\n" +
       "  /listusers\n" +

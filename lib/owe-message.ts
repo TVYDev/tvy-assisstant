@@ -231,6 +231,29 @@ export function calculateNetOwed(params: {
   return params.owes_me + params.subOwed - params.i_owe - params.deposit;
 }
 
+export async function resolveNetOwedForTelegramUser(
+  userId: number,
+  username: string,
+): Promise<number> {
+  const [record, subscriptionMember, deposit] = await Promise.all([
+    resolveDebtForTelegramUser(userId, username),
+    resolveSubscriptionMemberForTelegramUser(userId, username),
+    resolveDepositForTelegramUser(userId, username),
+  ]);
+
+  const ytOwing =
+    subscriptionMember && subscriptionMember.unpaid_count > 0
+      ? await getUnpaidYoutubeOwing(subscriptionMember.id)
+      : { total: 0, months: [] };
+
+  return calculateNetOwed({
+    owes_me: record?.owes_me ?? 0,
+    i_owe: record?.i_owe ?? 0,
+    deposit: deposit ?? 0,
+    subOwed: ytOwing.total,
+  });
+}
+
 function formatOweMessageLines(params: {
   record: DebtRecord | null;
   subscriptionMember: SubscriptionMember | null;

@@ -38,12 +38,19 @@ export const OWNER_MENU_USER_TEXT =
 export const OWNER_MENU_PREVIEW_TEXT =
   "🔍 <b>Previews</b>\n\n" +
   "<code>/previewowe BSR</code> — preview someone's /owe\n" +
+  "<code>/stickerid</code> — sticker file_id (owner DM only)\n" +
   "Use the button below for the monthly YouTube reminder preview.";
+
+export const OWNER_MENU_STICKERS_TEXT =
+  "🎭 <b>Follow-up stickers</b>\n\n" +
+  "Configure stickers sent after public commands.\n" +
+  "Use the buttons below, or open <b>Stickers</b> from the main menu.";
 
 export const OWNER_MENU_HELP_TEXT =
   "📖 <b>Quick tip</b>\n\n" +
   "Type <code>/help</code> for the full command list.\n" +
-  "Type <code>/menu</code> anytime to reopen this panel.\n\n" +
+  "Type <code>/menu</code> anytime to reopen this panel.\n" +
+  "Use <b>Stickers</b> in the menu to configure follow-up stickers.\n\n" +
   "Public users only see: /owe /qr /about /help";
 
 const PUBLIC_COMMANDS = [
@@ -65,6 +72,7 @@ const OWNER_COMMANDS = [
   { command: "ytpaid", description: "Mark YouTube month(s) paid" },
   { command: "ytfees", description: "List YouTube fee schedules" },
   { command: "previewowe", description: "Preview /owe for a shortcode" },
+  { command: "stickerid", description: "Get Telegram sticker file_id" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
 ] as const;
@@ -78,6 +86,8 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
     .text("👥 Users", "om:user")
     .row()
     .text("🔍 Previews", "om:prev")
+    .text("🎭 Stickers", "om:stickers")
+    .row()
     .text("📖 Help", "om:help");
 }
 
