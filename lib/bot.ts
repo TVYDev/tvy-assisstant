@@ -30,6 +30,23 @@ import {
   updateDebtItem,
   getAllDebtRecords,
 } from "./debt";
+import {
+  startSession,
+  getSession,
+  cancelSession,
+  advanceSession,
+  submitQuickLog,
+  splitFitCommandArgs,
+  getLogHistory,
+  formatLogHistory,
+  isGymMotivationReminderEnabled,
+  setGymMotivationReminderEnabled,
+  formatGymMotivationReminderStatus,
+  parseFitnessLogCallback,
+  FITNESS_LOG_CALLBACK_PREFIX,
+  type AdvanceSessionResult,
+  type FitnessLogKeyboard,
+} from "./fitness-log";
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN environment variable is not set.");
@@ -50,6 +67,23 @@ function notBossReply(ctx: { reply: (msg: string) => unknown }) {
   const msg =
     NOT_BOSS_REPLIES[Math.floor(Math.random() * NOT_BOSS_REPLIES.length)];
   return ctx.reply(msg);
+}
+
+function fitnessLogReplyOptions(result: AdvanceSessionResult) {
+  if (!result.keyboard) return undefined;
+  return { reply_markup: { inline_keyboard: result.keyboard } };
+}
+
+async function replyFitnessLogResult(
+  ctx: {
+    reply: (
+      text: string,
+      options?: { reply_markup?: { inline_keyboard: FitnessLogKeyboard } },
+    ) => Promise<unknown>;
+  },
+  result: AdvanceSessionResult,
+) {
+  await ctx.reply(result.reply, fitnessLogReplyOptions(result));
 }
 
 function pick<T>(arr: T[]): T {
@@ -743,6 +777,144 @@ bot.command("listusers", async (ctx) => {
 });
 
 // Owner-only: /help — list all commands
+bot.command("fit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  if (!args) {
+    const { reply } = await startSession(ctx.from.id);
+    return ctx.reply(reply);
+  }
+
+  const split = splitFitCommandArgs(args);
+  if (!split.ok) {
+    return ctx.reply(split.error);
+  }
+
+  if (!split.rest) {
+    const { reply } = await startSession(ctx.from.id, split.logDate);
+    return ctx.reply(reply);
+  }
+
+  const result = await submitQuickLog(ctx.from.id, args);
+  return ctx.reply(result.reply);
+});
+
+bot.command("cancelfit", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    return ctx.reply("No active log session to cancel.");
+  }
+
+  await cancelSession(ctx.from.id);
+  return ctx.reply("Log session cancelled.");
+});
+
+bot.command("fithistory", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const args = ctx.match?.trim() ?? "";
+  const days = args ? parseInt(args, 10) : 30;
+  if (args && (Number.isNaN(days) || days <= 0)) {
+    return ctx.reply("Usage: /fithistory [days]\nExample: /fithistory 30");
+  }
+
+  const logs = await getLogHistory(days);
+  return ctx.reply(formatLogHistory(logs, days));
+});
+
+bot.command("gymreminder", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const arg = (ctx.match?.trim() ?? "").toLowerCase();
+
+  if (!arg) {
+    const enabled = await isGymMotivationReminderEnabled();
+    return ctx.reply(
+      `${formatGymMotivationReminderStatus(enabled)}\n\n` +
+        "Toggle with:\n" +
+        "/gymreminder on\n" +
+        "/gymreminder off",
+    );
+  }
+
+  if (arg === "on") {
+    await setGymMotivationReminderEnabled(true);
+    return ctx.reply(
+      "✅ " + formatGymMotivationReminderStatus(true) + " 🦕",
+    );
+  }
+
+  if (arg === "off") {
+    await setGymMotivationReminderEnabled(false);
+    return ctx.reply(
+      "✅ " + formatGymMotivationReminderStatus(false) + " 🦕",
+    );
+  }
+
+  return ctx.reply(
+    "Usage:\n/gymreminder — show status\n/gymreminder on\n/gymreminder off",
+  );
+});
+
+bot.on("message:text", async (ctx, next) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return next();
+  }
+
+  const text = ctx.message.text.trim();
+  if (text.startsWith("/")) {
+    return next();
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    return next();
+  }
+
+  const result = await advanceSession(ctx.from.id, text);
+  await replyFitnessLogResult(ctx, result);
+});
+
+bot.on("callback_query:data", async (ctx, next) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return next();
+  }
+
+  const data = ctx.callbackQuery.data;
+  if (!data.startsWith(`${FITNESS_LOG_CALLBACK_PREFIX}:`)) {
+    return next();
+  }
+
+  const input = parseFitnessLogCallback(data);
+  if (!input) {
+    await ctx.answerCallbackQuery({ text: "Invalid button." });
+    return;
+  }
+
+  const session = await getSession(ctx.from.id);
+  if (!session) {
+    await ctx.answerCallbackQuery({
+      text: "Session expired. Send /fit to start.",
+    });
+    return;
+  }
+
+  const result = await advanceSession(ctx.from.id, input);
+  await ctx.answerCallbackQuery();
+  await replyFitnessLogResult(ctx, result);
+});
+
 bot.command("help", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return ctx.reply(
@@ -806,6 +978,26 @@ bot.command("help", async (ctx) => {
       "    → e.g. /updateuser BSR first_name Sophia\n" +
       "    → e.g. /updateuser BSR telegram_username johndoe\n" +
       "    → e.g. /updateuser BSR telegram_user_id 123456789\n" +
-      "    → Shortcode change cascades all records",
+      "    → Shortcode change cascades all records\n" +
+      "\n" +
+      "🏋️ Fitness logging:\n" +
+      "  /fit\n" +
+      "    → Guided morning log for today\n" +
+      "  /fit YYYY-MM-DD\n" +
+      "    → Guided backdate for a missed morning\n" +
+      "  /fit <weight> rest\n" +
+      "    → Quick rest-day log, e.g. /fit 75.5 rest\n" +
+      "  /fit <weight> skip\n" +
+      "    → Quick skip log, e.g. /fit 75.5 skip\n" +
+      "  /fit <weight> yes <session> <minutes>\n" +
+      "    → Quick gym log, e.g. /fit 75.5 yes chest 45\n" +
+      "  /fit YYYY-MM-DD <weight> ...\n" +
+      "    → Quick backdate, e.g. /fit 2026-06-12 75.5 rest\n" +
+      "  /cancelfit\n" +
+      "    → Cancel an in-progress log session\n" +
+      "  /fithistory [days]\n" +
+      "    → Gym dot grid + recent logs (default 30 days)\n" +
+      "  /gymreminder [on|off]\n" +
+      "    → Weekday 4:45 PM gym motivation DM (default on)",
   );
 });

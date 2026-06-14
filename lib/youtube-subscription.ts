@@ -130,6 +130,21 @@ export async function getConfig(key: string): Promise<string> {
   return (data as { value: string }).value;
 }
 
+export async function setConfig(key: string, value: string): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("app_config").upsert(
+    {
+      key,
+      value,
+      updated_at: now,
+    },
+    { onConflict: "key" },
+  );
+
+  if (error)
+    throw new Error(`Failed to set config "${key}": ${error.message}`);
+}
+
 async function getUnpaidCountForShortcode(shortcode: string): Promise<number> {
   const { count, error } = await supabase
     .from("youtube_subscription_months")
