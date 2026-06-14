@@ -143,7 +143,7 @@ const GRID_GYM = "🟩";
 const GRID_REST = "⬜";
 const GRID_SKIP = "🟧";
 const GRID_UNKNOWN = "⬛";
-const GRID_OUTSIDE = "  ";
+const GRID_OUTSIDE = "▫️";
 
 export function formatGymActivityGrid(
   logs: DailyFitnessLog[],
@@ -199,8 +199,8 @@ export function formatGymActivityGrid(
 
   const gridLines = GRID_DAY_LABELS.map((label, displayRow) => {
     const row = GRID_ROW_ORDER[displayRow];
-    const cells = columns.map((column) => column[row]).join(" ");
-    return `${label}  ${cells}`;
+    const cells = columns.map((column) => column[row]).join("");
+    return `${label} ${cells}`;
   });
 
   return (
