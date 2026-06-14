@@ -86,6 +86,8 @@ import {
   OWNER_MENU_USER_TEXT,
   OWNER_MENU_PREVIEW_TEXT,
   OWNER_MENU_HELP_TEXT,
+  OWNER_MENU_FIT_TEXT,
+  ownerFitMenuKeyboard,
 } from "./owner-menu";
 import {
   parseShortcodeFromMatch,
@@ -1203,6 +1205,9 @@ bot.callbackQuery(/^om:/, async (ctx) => {
       );
       break;
     }
+    case "om:fit":
+      await editSection(OWNER_MENU_FIT_TEXT, ownerFitMenuKeyboard());
+      break;
     case "om:pick:debts":
       await promptShortcodePick(ctx, "debts");
       break;
@@ -1224,6 +1229,42 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     case "om:run:previewytreminder":
       await sendYtReminderPreview(ctx);
       break;
+    case "om:run:fit": {
+      const { reply } = await startSession(ctx.from!.id);
+      await ctx.reply(reply);
+      break;
+    }
+    case "om:run:fithistory": {
+      const logs = await getLogHistory(30);
+      await ctx.reply(formatLogHistory(logs, 30), { parse_mode: "HTML" });
+      break;
+    }
+    case "om:run:gymreminder": {
+      const enabled = await isGymMotivationReminderEnabled();
+      await ctx.reply(
+        `${formatGymMotivationReminderStatus(enabled)}\n\n` +
+          "Toggle with the buttons below or /gymreminder on|off",
+      );
+      break;
+    }
+    case "om:run:gymreminder:on":
+      await setGymMotivationReminderEnabled(true);
+      await ctx.reply("✅ " + formatGymMotivationReminderStatus(true) + " 🦕");
+      break;
+    case "om:run:gymreminder:off":
+      await setGymMotivationReminderEnabled(false);
+      await ctx.reply("✅ " + formatGymMotivationReminderStatus(false) + " 🦕");
+      break;
+    case "om:run:cancelfit": {
+      const session = await getSession(ctx.from!.id);
+      if (!session) {
+        await ctx.reply("No active log session to cancel.");
+        break;
+      }
+      await cancelSession(ctx.from!.id);
+      await ctx.reply("Log session cancelled.");
+      break;
+    }
   }
 });
 
