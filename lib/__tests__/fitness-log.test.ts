@@ -550,7 +550,7 @@ describe("formatters", () => {
     expect(message).toContain("⬜ rest");
     expect(message).toContain("🟧 skip");
     expect(message).toContain("⬛ no log");
-    expect(message).toContain("<pre>Sun");
+    expect(message).toContain("<pre>Mon");
     expect(message).toContain("Gym 1 · Rest 1");
   });
 

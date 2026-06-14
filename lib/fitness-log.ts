@@ -137,7 +137,8 @@ export function buildGymActivityMap(
   return map;
 }
 
-const GRID_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const GRID_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const GRID_ROW_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const GRID_GYM = "🟩";
 const GRID_REST = "⬜";
 const GRID_SKIP = "🟧";
@@ -196,7 +197,8 @@ export function formatGymActivityGrid(
     weekStart = addDaysToDateString(weekStart, 7);
   }
 
-  const gridLines = GRID_DAY_LABELS.map((label, row) => {
+  const gridLines = GRID_DAY_LABELS.map((label, displayRow) => {
+    const row = GRID_ROW_ORDER[displayRow];
     const cells = columns.map((column) => column[row]).join(" ");
     return `${label}  ${cells}`;
   });
