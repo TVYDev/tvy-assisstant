@@ -3,6 +3,8 @@ import { getConfig, setConfig } from "./youtube-subscription";
 
 const TIMEZONE = "Asia/Phnom_Penh";
 const SESSION_TTL_MS = 30 * 60 * 1000;
+export const FITNESS_HISTORY_GRID_DAYS = 90;
+export const FITNESS_HISTORY_RECENT_DAYS = 7;
 
 export const GYM_SESSIONS = [
   "chest",
@@ -124,13 +126,19 @@ function dayOfWeekSundayZero(dateStr: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+function dayOfWeekMondayZero(dateStr: string): number {
+  const sundayZero = dayOfWeekSundayZero(dateStr);
+  return sundayZero === 0 ? 6 : sundayZero - 1;
+}
+
 export type GymDayStatus = GymStatus;
 
 export function buildGymActivityMap(
   logs: DailyFitnessLog[],
 ): Map<string, GymDayStatus> {
   const map = new Map<string, GymDayStatus>();
-  for (const log of logs) {
+  const sorted = [...logs].sort((a, b) => a.log_date.localeCompare(b.log_date));
+  for (const log of sorted) {
     const gymDate = addDaysToDateString(log.log_date, -1);
     map.set(gymDate, log.gym_status);
   }
@@ -138,12 +146,67 @@ export function buildGymActivityMap(
 }
 
 const GRID_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-const GRID_ROW_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const GRID_GYM = "🟩";
 const GRID_REST = "⬜";
 const GRID_SKIP = "🟧";
 const GRID_UNKNOWN = "⬛";
 const GRID_OUTSIDE = "▫️";
+
+function statusToGridCell(
+  dateStr: string,
+  startDate: string,
+  endDate: string,
+  activityMap: Map<string, GymDayStatus>,
+): string {
+  if (dateStr < startDate || dateStr > endDate) return GRID_OUTSIDE;
+  const status = activityMap.get(dateStr);
+  if (status === "gym") return GRID_GYM;
+  if (status === "rest") return GRID_REST;
+  if (status === "skip") return GRID_SKIP;
+  return GRID_UNKNOWN;
+}
+
+export function buildGymActivityGridMatrix(
+  logs: DailyFitnessLog[],
+  days: number,
+  today: string = todayInPhnomPenh(),
+): string[][] {
+  const safeDays = Math.min(Math.max(Math.floor(days), 7), 365);
+  const activityMap = buildGymActivityMap(logs);
+  const endDate = addDaysToDateString(today, -1);
+  const startDate = addDaysToDateString(endDate, -(safeDays - 1));
+
+  const gridStart = addDaysToDateString(
+    startDate,
+    -dayOfWeekMondayZero(startDate),
+  );
+  const gridEnd = addDaysToDateString(
+    endDate,
+    6 - dayOfWeekMondayZero(endDate),
+  );
+
+  const columns: string[][] = [];
+  let weekStart = gridStart;
+  while (weekStart <= gridEnd) {
+    const column: string[] = [];
+    for (let dow = 0; dow < 7; dow++) {
+      column.push(
+        statusToGridCell(
+          addDaysToDateString(weekStart, dow),
+          startDate,
+          endDate,
+          activityMap,
+        ),
+      );
+    }
+    columns.push(column);
+    weekStart = addDaysToDateString(weekStart, 7);
+  }
+
+  return GRID_DAY_LABELS.map((_label, row) =>
+    columns.map((column) => column[row]),
+  );
+}
 
 export function formatGymActivityGrid(
   logs: DailyFitnessLog[],
@@ -154,15 +217,7 @@ export function formatGymActivityGrid(
   const activityMap = buildGymActivityMap(logs);
   const endDate = addDaysToDateString(today, -1);
   const startDate = addDaysToDateString(endDate, -(safeDays - 1));
-
-  const gridStart = addDaysToDateString(
-    startDate,
-    -dayOfWeekSundayZero(startDate),
-  );
-  const gridEnd = addDaysToDateString(
-    endDate,
-    6 - dayOfWeekSundayZero(endDate),
-  );
+  const matrix = buildGymActivityGridMatrix(logs, days, today);
 
   let gymCount = 0;
   let restCount = 0;
@@ -177,29 +232,8 @@ export function formatGymActivityGrid(
     else unknownCount++;
   }
 
-  const columns: string[][] = [];
-  let weekStart = gridStart;
-  while (weekStart <= gridEnd) {
-    const column: string[] = [];
-    for (let dow = 0; dow < 7; dow++) {
-      const dateStr = addDaysToDateString(weekStart, dow);
-      if (dateStr < startDate || dateStr > endDate) {
-        column.push(GRID_OUTSIDE);
-      } else {
-        const status = activityMap.get(dateStr);
-        if (status === "gym") column.push(GRID_GYM);
-        else if (status === "rest") column.push(GRID_REST);
-        else if (status === "skip") column.push(GRID_SKIP);
-        else column.push(GRID_UNKNOWN);
-      }
-    }
-    columns.push(column);
-    weekStart = addDaysToDateString(weekStart, 7);
-  }
-
-  const gridLines = GRID_DAY_LABELS.map((label, displayRow) => {
-    const row = GRID_ROW_ORDER[displayRow];
-    const cells = columns.map((column) => column[row]).join("");
+  const gridLines = GRID_DAY_LABELS.map((label, row) => {
+    const cells = matrix[row].join("");
     return `${label} ${cells}`;
   });
 
@@ -779,17 +813,26 @@ export function formatLogConfirmation(
 
 export function formatLogHistory(
   logs: DailyFitnessLog[],
-  days: number,
+  gridDays: number = FITNESS_HISTORY_GRID_DAYS,
   today: string = todayInPhnomPenh(),
+  recentDays: number = FITNESS_HISTORY_RECENT_DAYS,
 ): string {
   if (logs.length === 0) {
-    return `📊 No fitness logs in the last ${days} days.`;
+    return `📊 No fitness logs in the last ${gridDays} days.`;
   }
 
-  const grid = formatGymActivityGrid(logs, days, today);
-  const recentLines = logs.slice(0, 7).map(formatLogHistoryLine);
+  const grid = formatGymActivityGrid(logs, gridDays, today);
+  const recentStart = addDaysToDateString(today, -(recentDays - 1));
+  const recentLines = logs
+    .filter((log) => log.log_date >= recentStart)
+    .map(formatLogHistoryLine);
 
-  return `${grid}\n\n📝 Recent logs\n${recentLines.join("\n")}`;
+  const recentSection =
+    recentLines.length > 0
+      ? recentLines.join("\n")
+      : `No logs in the last ${recentDays} days.`;
+
+  return `${grid}\n\n📝 Recent logs (last ${recentDays} days)\n${recentSection}`;
 }
 
 export function buildMorningReminderMessage(): string {

@@ -35,6 +35,7 @@ import {
   splitFitCommandArgs,
   getLogHistory,
   formatLogHistory,
+  FITNESS_HISTORY_GRID_DAYS,
   isGymMotivationReminderEnabled,
   setGymMotivationReminderEnabled,
   formatGymMotivationReminderStatus,
@@ -1235,8 +1236,8 @@ bot.callbackQuery(/^om:/, async (ctx) => {
       break;
     }
     case "om:run:fithistory": {
-      const logs = await getLogHistory(30);
-      await ctx.reply(formatLogHistory(logs, 30), { parse_mode: "HTML" });
+      const logs = await getLogHistory(FITNESS_HISTORY_GRID_DAYS);
+      await ctx.reply(formatLogHistory(logs), { parse_mode: "HTML" });
       break;
     }
     case "om:run:gymreminder": {
@@ -1486,9 +1487,9 @@ bot.command("fithistory", async (ctx) => {
   }
 
   const args = ctx.match?.trim() ?? "";
-  const days = args ? parseInt(args, 10) : 30;
+  const days = args ? parseInt(args, 10) : FITNESS_HISTORY_GRID_DAYS;
   if (args && (Number.isNaN(days) || days <= 0)) {
-    return ctx.reply("Usage: /fithistory [days]\nExample: /fithistory 30");
+    return ctx.reply("Usage: /fithistory [days]\nExample: /fithistory 90");
   }
 
   const logs = await getLogHistory(days);
@@ -1688,7 +1689,7 @@ bot.command("help", async (ctx) => {
       "  /cancelfit\n" +
       "    → Cancel an in-progress log session\n" +
       "  /fithistory [days]\n" +
-      "    → Gym dot grid + recent logs (default 30 days)\n" +
+      "    → Gym dot grid (default 90 days) + recent logs (last 7 days)\n" +
       "  /gymreminder [on|off]\n" +
       "    → Weekday 4:45 PM gym motivation DM (default on)",
   );
