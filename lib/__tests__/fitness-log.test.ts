@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { mockFrom } = vi.hoisted(() => ({
   mockFrom: vi.fn(),
@@ -45,9 +45,16 @@ import {
 } from "../fitness-log";
 
 const TEST_TODAY = "2026-06-14";
+const TEST_NOW = new Date("2026-06-14T01:00:00.000Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(TEST_NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function makeChain(overrides: Record<string, unknown> = {}) {
