@@ -34,6 +34,7 @@ import {
   buildGymActivityMap,
   buildGymActivityGridMatrix,
   formatGymActivityGrid,
+  getGymActivityGridRange,
   addDaysToDateString,
   formatLogConfirmation,
   formatLogHistory,
@@ -550,7 +551,7 @@ describe("formatters", () => {
           gym_minutes: null,
         },
       ],
-      7,
+      2,
       "2026-06-09",
     );
 
@@ -559,7 +560,16 @@ describe("formatters", () => {
     expect(message).toContain("🟧 skip");
     expect(message).toContain("⬛ no log");
     expect(message).toContain("<pre>Mon");
+    expect(message).toContain("last 2 weeks");
     expect(message).toContain("Gym 1 · Rest 1");
+  });
+
+  it("getGymActivityGridRange aligns to Monday and spans full weeks", () => {
+    const range = getGymActivityGridRange(12, "2026-06-17");
+    expect(range.gridStart).toBe("2026-03-30");
+    expect(range.gridEnd).toBe("2026-06-21");
+    expect(range.activityEnd).toBe("2026-06-16");
+    expect(buildGymActivityGridMatrix([], 12, "2026-06-17")[0]).toHaveLength(12);
   });
 
   it("formatGymActivityGrid keeps days in chronological order within each week column", () => {
@@ -598,7 +608,7 @@ describe("formatters", () => {
       },
     ];
 
-    const matrix = buildGymActivityGridMatrix(logs, 30, "2026-06-17");
+    const matrix = buildGymActivityGridMatrix(logs, 2, "2026-06-17");
     const fri = matrix[4];
     const sat = matrix[5];
     const sun = matrix[6];
@@ -608,7 +618,7 @@ describe("formatters", () => {
     expect(sat.at(-2)).toBe("🟧");
     expect(sun.at(-2)).toBe("🟧");
     expect(mon.at(-1)).toBe("🟩");
-    expect(sun.at(-1)).toBe("▫️");
+    expect(sun.at(-1)).toBe("⬛");
   });
 
   it("addDaysToDateString shifts calendar dates", () => {
@@ -645,7 +655,7 @@ describe("formatters", () => {
           gym_minutes: null,
         },
       ],
-      14,
+      12,
       "2026-06-14",
     );
 
@@ -657,7 +667,7 @@ describe("formatters", () => {
   });
 
   it("formatLogHistory handles empty history", () => {
-    expect(formatLogHistory([], 14)).toContain("No fitness logs");
+    expect(formatLogHistory([], 12)).toContain("No fitness logs");
   });
 
   it("formatLogHistory limits recent logs to the last 7 calendar days", () => {
