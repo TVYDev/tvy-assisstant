@@ -32,6 +32,7 @@ import {
   parseLogDateInput,
   validateLogDate,
   buildGymActivityMap,
+  buildGymActivityGridMatrix,
   formatGymActivityGrid,
   addDaysToDateString,
   formatLogConfirmation,
@@ -554,6 +555,55 @@ describe("formatters", () => {
     expect(message).toContain("Gym 1 · Rest 1");
   });
 
+  it("formatGymActivityGrid keeps days in chronological order within each week column", () => {
+    const logs = [
+      {
+        id: 4,
+        log_date: "2026-06-16",
+        weight_kg: 67.4,
+        gym_status: "gym" as const,
+        gym_session: "legs",
+        gym_minutes: 60,
+      },
+      {
+        id: 3,
+        log_date: "2026-06-15",
+        weight_kg: 67.6,
+        gym_status: "skip" as const,
+        gym_session: null,
+        gym_minutes: null,
+      },
+      {
+        id: 2,
+        log_date: "2026-06-14",
+        weight_kg: 67,
+        gym_status: "skip" as const,
+        gym_session: null,
+        gym_minutes: null,
+      },
+      {
+        id: 1,
+        log_date: "2026-06-13",
+        weight_kg: 67,
+        gym_status: "skip" as const,
+        gym_session: null,
+        gym_minutes: null,
+      },
+    ];
+
+    const matrix = buildGymActivityGridMatrix(logs, 30, "2026-06-17");
+    const fri = matrix[4];
+    const sat = matrix[5];
+    const sun = matrix[6];
+    const mon = matrix[0];
+
+    expect(fri.at(-2)).toBe("🟧");
+    expect(sat.at(-2)).toBe("🟧");
+    expect(sun.at(-2)).toBe("🟧");
+    expect(mon.at(-1)).toBe("🟩");
+    expect(sun.at(-1)).toBe("▫️");
+  });
+
   it("addDaysToDateString shifts calendar dates", () => {
     expect(addDaysToDateString("2026-06-14", -1)).toBe("2026-06-13");
   });
@@ -593,7 +643,7 @@ describe("formatters", () => {
     );
 
     expect(message).toContain("Gym activity");
-    expect(message).toContain("Recent logs");
+    expect(message).toContain("Recent logs (last 7 days)");
     expect(message).toContain("2026-06-14");
     expect(message).toContain("75.50 kg");
     expect(message).toContain("rest day");
@@ -601,6 +651,34 @@ describe("formatters", () => {
 
   it("formatLogHistory handles empty history", () => {
     expect(formatLogHistory([], 14)).toContain("No fitness logs");
+  });
+
+  it("formatLogHistory limits recent logs to the last 7 calendar days", () => {
+    const message = formatLogHistory(
+      [
+        {
+          id: 1,
+          log_date: "2026-06-14",
+          weight_kg: 75,
+          gym_status: "skip",
+          gym_session: null,
+          gym_minutes: null,
+        },
+        {
+          id: 2,
+          log_date: "2026-06-06",
+          weight_kg: 74,
+          gym_status: "rest",
+          gym_session: null,
+          gym_minutes: null,
+        },
+      ],
+      90,
+      "2026-06-14",
+    );
+
+    expect(message).toContain("2026-06-14");
+    expect(message).not.toContain("2026-06-06");
   });
 
   it("buildMorningReminderMessage prompts /fit", () => {

@@ -53,7 +53,7 @@ export const OWNER_MENU_FIT_TEXT =
   "<code>/fit 75.5 rest</code> — quick rest day\n" +
   "<code>/fit 75.5 skip</code> — quick skip\n" +
   "<code>/fit 75.5 yes chest 45</code> — quick gym log\n" +
-  "<code>/fithistory [days]</code> — dot grid + recent logs\n" +
+  "<code>/fithistory [days]</code> — 90-day grid + last 7 days of logs\n" +
   "<code>/gymreminder on|off</code> — weekday 4:45 PM nudge\n" +
   "<code>/cancelfit</code> — cancel in-progress session";
 
