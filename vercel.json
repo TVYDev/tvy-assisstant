@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/fitness-reminder",
-      "schedule": "1 1 * * *"
+      "schedule": "50 0 * * *"
     },
     {
       "path": "/api/cron/gym-motivation",

@@ -48,5 +48,18 @@ describe("command-followup-stickers", () => {
         0,
       ),
     ).toBe(true);
+    expect(shouldSendCommandFollowupSticker(rule, 0)).toBe(false);
+    expect(
+      shouldSendCommandFollowupSticker(
+        { enabled: true, stickerId: "CAAC-test", minNetOwed: 0 },
+        0,
+      ),
+    ).toBe(false);
+    expect(
+      shouldSendCommandFollowupSticker(
+        { enabled: true, stickerId: "CAAC-test", minNetOwed: 0 },
+        0.01,
+      ),
+    ).toBe(true);
   });
 });

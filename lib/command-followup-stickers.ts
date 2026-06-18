@@ -252,9 +252,11 @@ export function ownerStickerCommandKeyboard(
     keyboard
       .row()
       .text("Always", `om:sticker:${command}:min:none`)
-      .text("> $5", `om:sticker:${command}:min:5`)
+      .text("> $0", `om:sticker:${command}:min:0`)
       .row()
+      .text("> $5", `om:sticker:${command}:min:5`)
       .text("> $10", `om:sticker:${command}:min:10`)
+      .row()
       .text("> $20", `om:sticker:${command}:min:20`);
   }
 
