@@ -798,7 +798,12 @@ export function formatGymSummary(
 }
 
 export function formatLogHistoryLine(log: DailyFitnessLog): string {
-  return `${log.log_date} — ${formatWeightKg(log.weight_kg)} | ${formatGymSummary(log)}`;
+  const base = `${log.log_date} | ${formatWeightKg(log.weight_kg)}`;
+  if (log.gym_status === "gym") {
+    return `${base} | ${log.gym_minutes} min | ${log.gym_session}`;
+  }
+  if (log.gym_status === "rest") return `${base} | rest`;
+  return `${base} | skip`;
 }
 
 export function formatLogConfirmation(

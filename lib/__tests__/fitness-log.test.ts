@@ -38,6 +38,7 @@ import {
   addDaysToDateString,
   formatLogConfirmation,
   formatLogHistory,
+  formatLogHistoryLine,
   buildMorningReminderMessage,
   parseGymMotivationReminderEnabled,
   isWeekdayInPhnomPenh,
@@ -643,6 +644,29 @@ describe("formatters", () => {
     expect(message).toContain("75.50 kg");
   });
 
+  it("formatLogHistoryLine uses pipe-separated fields", () => {
+    expect(
+      formatLogHistoryLine({
+        id: 1,
+        log_date: "2026-06-20",
+        weight_kg: 67.4,
+        gym_status: "gym",
+        gym_session: "back",
+        gym_minutes: 45,
+      }),
+    ).toBe("2026-06-20 | 67.40 kg | 45 min | back");
+    expect(
+      formatLogHistoryLine({
+        id: 2,
+        log_date: "2026-06-19",
+        weight_kg: 67.75,
+        gym_status: "skip",
+        gym_session: null,
+        gym_minutes: null,
+      }),
+    ).toBe("2026-06-19 | 67.75 kg | skip");
+  });
+
   it("formatLogHistory renders grid and recent logs", () => {
     const message = formatLogHistory(
       [
@@ -661,9 +685,7 @@ describe("formatters", () => {
 
     expect(message).toContain("Gym activity");
     expect(message).toContain("Recent logs (last 7 days)");
-    expect(message).toContain("2026-06-14");
-    expect(message).toContain("75.50 kg");
-    expect(message).toContain("rest day");
+    expect(message).toContain("2026-06-14 | 75.50 kg | rest");
   });
 
   it("formatLogHistory handles empty history", () => {
