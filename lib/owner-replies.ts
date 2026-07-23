@@ -8,10 +8,7 @@ import {
   getDepositBalanceByShortcode,
   getDepositTransactions,
 } from "./deposit";
-import {
-  buildOweMessageForShortcode,
-  calculateNetOwed,
-} from "./owe-message";
+import { buildOweMessageForShortcode, calculateNetOwed } from "./owe-message";
 import {
   getYoutubeFeeSchedules,
   getCurrentYoutubeMonthlyFee,
@@ -137,8 +134,8 @@ export async function sendYtReminderPreview(
       feeAnnouncement: feeAnnouncement.text ?? undefined,
     });
 
-  const qrPath = path.join(process.cwd(), "data", "qr.png");
-  const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
+  const qrPath = path.join(process.cwd(), "data", "qr.jpeg");
+  const file = new InputFile(fs.readFileSync(qrPath), "qr.jpeg");
 
   await ctx.replyWithPhoto(file, {
     caption,

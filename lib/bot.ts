@@ -145,7 +145,10 @@ async function refreshStickerCommandPanel(
   const keyboard = ownerStickerCommandKeyboard(command);
 
   try {
-    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    await ctx.editMessageText(text, {
+      parse_mode: "HTML",
+      reply_markup: keyboard,
+    });
   } catch {
     await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
   }
@@ -205,8 +208,7 @@ async function handleStickerMenuCallback(
       return;
     case "min": {
       const raw = parts[4];
-      const minNetOwed =
-        raw === "none" ? null : Number.parseFloat(raw ?? "");
+      const minNetOwed = raw === "none" ? null : Number.parseFloat(raw ?? "");
       if (raw !== "none" && Number.isNaN(minNetOwed)) return;
       await updateCommandFollowupStickerRule(command, { minNetOwed });
       await refreshStickerCommandPanel(ctx, command);
@@ -226,9 +228,7 @@ function isOwnerPrivateChat(ctx: {
   chat?: { type: string; id: number };
 }): boolean {
   return (
-    isOwner(ctx) &&
-    ctx.chat?.type === "private" &&
-    ctx.chat.id === OWNER_ID
+    isOwner(ctx) && ctx.chat?.type === "private" && ctx.chat.id === OWNER_ID
   );
 }
 
@@ -499,8 +499,8 @@ bot.command("qr", async (ctx) => {
 
   const net = await resolveNetOwedForTelegramUser(userId, username);
 
-  const qrPath = path.join(process.cwd(), "data", "qr.png");
-  const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
+  const qrPath = path.join(process.cwd(), "data", "qr.jpeg");
+  const file = new InputFile(fs.readFileSync(qrPath), "qr.jpeg");
 
   if (net > 0) {
     const oweMessage = await buildOweMessage(userId, username, firstName);
@@ -1165,7 +1165,10 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     return;
   }
 
-  const editSection = async (text: string, keyboard: ReturnType<typeof ownerMainMenuKeyboard>) => {
+  const editSection = async (
+    text: string,
+    keyboard: ReturnType<typeof ownerMainMenuKeyboard>,
+  ) => {
     try {
       await ctx.editMessageText(text, {
         parse_mode: "HTML",
@@ -1293,9 +1296,7 @@ bot.callbackQuery(/^sc:/, async (ctx) => {
       break;
     case "previewowe": {
       const message = await buildPreviewOweReply(shortcode);
-      await ctx.reply(
-        message ?? `No records found for ${shortcode}.`,
-      );
+      await ctx.reply(message ?? `No records found for ${shortcode}.`);
       break;
     }
     case "paid":
@@ -1402,11 +1403,13 @@ bot.command("updateuser", async (ctx) => {
   const [, shortcode, field, value] = args as [
     string,
     string,
-    | "first_name"
-    | "last_name"
-    | "shortcode"
-    | "telegram_username"
-    | "telegram_user_id",
+    (
+      | "first_name"
+      | "last_name"
+      | "shortcode"
+      | "telegram_username"
+      | "telegram_user_id"
+    ),
     string,
   ];
 
@@ -1515,16 +1518,12 @@ bot.command("gymreminder", async (ctx) => {
 
   if (arg === "on") {
     await setGymMotivationReminderEnabled(true);
-    return ctx.reply(
-      "✅ " + formatGymMotivationReminderStatus(true) + " 🦕",
-    );
+    return ctx.reply("✅ " + formatGymMotivationReminderStatus(true) + " 🦕");
   }
 
   if (arg === "off") {
     await setGymMotivationReminderEnabled(false);
-    return ctx.reply(
-      "✅ " + formatGymMotivationReminderStatus(false) + " 🦕",
-    );
+    return ctx.reply("✅ " + formatGymMotivationReminderStatus(false) + " 🦕");
   }
 
   return ctx.reply(

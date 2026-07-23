@@ -58,7 +58,7 @@ Add both variables to your **Vercel project settings** under _Environment Variab
 
 ### 3. Replace the QR Code Placeholder
 
-Replace `data/qr.png` with your real KHQR image before deploying.
+Replace `data/qr.jpeg` with your real KHQR image before deploying.
 
 ### 4. Deploy to Vercel
 

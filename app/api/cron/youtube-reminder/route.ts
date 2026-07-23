@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
   ]);
 
   // Send QR photo with the debt summary caption
-  const qrPath = path.join(process.cwd(), "data", "qr.png");
-  const file = new InputFile(fs.readFileSync(qrPath), "qr.png");
+  const qrPath = path.join(process.cwd(), "data", "qr.jpeg");
+  const file = new InputFile(fs.readFileSync(qrPath), "qr.jpeg");
   const caption = buildReminderMessage(owings, depositTotals, {
     feeAnnouncement: feeAnnouncement.text ?? undefined,
   });
