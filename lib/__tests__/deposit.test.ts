@@ -20,6 +20,7 @@ import {
   getDepositTransactions,
   getAllDepositTotals,
   applyDepositTowardPayment,
+  formatDepositTransactionLine,
 } from "../deposit";
 
 beforeEach(() => {
@@ -235,5 +236,35 @@ describe("getAllDepositTotals", () => {
     const totals = await getAllDepositTotals();
     expect(totals.get("BSR")).toBe(15);
     expect(totals.get("PVS")).toBe(20);
+  });
+});
+
+describe("formatDepositTransactionLine", () => {
+  it("formats add and reduce rows with emoji and Phnom Penh time", () => {
+    expect(
+      formatDepositTransactionLine({
+        id: 1,
+        shortcode: "EKV",
+        type: "reduce",
+        amount: 1.65,
+        balance_after: 0.73,
+        note: "YouTube 2026-08",
+        created_at: "2026-08-01T10:00:00.000Z",
+      }),
+    ).toBe(
+      "  📉 -$1.65 (2026-08-01 17:00) → $0.73 left — YouTube 2026-08",
+    );
+
+    expect(
+      formatDepositTransactionLine({
+        id: 2,
+        shortcode: "EKV",
+        type: "add",
+        amount: 2.38,
+        balance_after: 2.38,
+        note: null,
+        created_at: "2026-07-29T08:00:00.000Z",
+      }),
+    ).toBe("  📈 +$2.38 (2026-07-29 15:00) → $2.38 total");
   });
 });

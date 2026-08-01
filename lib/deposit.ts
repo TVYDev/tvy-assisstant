@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
 
+const DEPOSIT_TIMEZONE = "Asia/Phnom_Penh";
+
 export type DepositTransactionType = "add" | "reduce";
 
 export interface DepositTransaction {
@@ -193,6 +195,32 @@ export async function getDepositTransactions(
     note: (row.note as string | null) ?? null,
     created_at: row.created_at as string,
   }));
+}
+
+export function formatDepositTransactionTimestamp(iso: string): string {
+  const date = new Date(iso);
+  const datePart = new Intl.DateTimeFormat("en-CA", {
+    timeZone: DEPOSIT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: DEPOSIT_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+  return `${datePart} ${timePart}`;
+}
+
+export function formatDepositTransactionLine(tx: DepositTransaction): string {
+  const when = formatDepositTransactionTimestamp(tx.created_at);
+  const note = tx.note ? ` — ${tx.note}` : "";
+  if (tx.type === "add") {
+    return `  📈 +$${tx.amount.toFixed(2)} (${when}) → $${tx.balance_after.toFixed(2)} total${note}`;
+  }
+  return `  📉 -$${tx.amount.toFixed(2)} (${when}) → $${tx.balance_after.toFixed(2)} left${note}`;
 }
 
 export async function getDepositReductionHistory(

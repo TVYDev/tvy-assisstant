@@ -7,6 +7,7 @@ import {
   getAllDepositTotals,
   getDepositBalanceByShortcode,
   getDepositTransactions,
+  formatDepositTransactionLine,
 } from "./deposit";
 import { buildOweMessageForShortcode, calculateNetOwed } from "./owe-message";
 import {
@@ -226,34 +227,13 @@ export async function buildDepositsReply(shortcode: string): Promise<string> {
     "",
   ];
 
-  const reductions = transactions.filter((t) => t.type === "reduce");
-  if (reductions.length > 0) {
-    lines.push("📉 Reduction history:");
-    for (const tx of reductions) {
-      const date = tx.created_at.slice(0, 10);
-      const note = tx.note ? ` — ${tx.note}` : "";
-      lines.push(
-        `  • -$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} left${note}`,
-      );
-    }
-    lines.push("");
-  } else {
-    lines.push("📉 No reductions yet.");
-    lines.push("");
-  }
-
-  const additions = transactions.filter((t) => t.type === "add");
-  if (additions.length > 0) {
-    lines.push("📈 Add history:");
-    for (const tx of additions) {
-      const date = tx.created_at.slice(0, 10);
-      const note = tx.note ? ` — ${tx.note}` : "";
-      lines.push(
-        `  • +$${tx.amount.toFixed(2)} (${date}) → $${tx.balance_after.toFixed(2)} total${note}`,
-      );
+  if (transactions.length > 0) {
+    lines.push("History:");
+    for (const tx of transactions) {
+      lines.push(formatDepositTransactionLine(tx));
     }
   } else {
-    lines.push("📈 No deposits added yet.");
+    lines.push("No deposit history yet.");
   }
 
   return lines.join("\n");
