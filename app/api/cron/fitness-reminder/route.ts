@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bot } from "@/lib/bot";
-import {
-  buildMorningReminderMessage,
-  getLogForDate,
-  todayInPhnomPenh,
-} from "@/lib/fitness-log";
+import { runFitnessReminderCron } from "@/lib/cron-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,38 +14,19 @@ export async function GET(req: NextRequest) {
 
   const params = req.nextUrl.searchParams;
   const dryRun = params.get("dry_run") === "true";
+  const force = params.get("force") === "true";
 
-  const ownerId = process.env.OWNER_TELEGRAM_ID;
-  if (!ownerId) {
-    return NextResponse.json(
-      { error: "OWNER_TELEGRAM_ID is not set" },
-      { status: 500 },
-    );
-  }
-
-  const logDate = todayInPhnomPenh();
-  const existing = await getLogForDate(logDate);
-  if (existing) {
-    return NextResponse.json({
-      ok: true,
-      dry_run: dryRun,
-      skipped: true,
-      reason: "already_logged",
-      log_date: logDate,
-    });
-  }
-
-  const message = buildMorningReminderMessage();
-
-  if (!dryRun) {
-    await bot.api.sendMessage(ownerId, message);
+  const result = await runFitnessReminderCron({ dryRun, force });
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
     dry_run: dryRun,
-    skipped: false,
-    log_date: logDate,
-    chat_id: ownerId,
+    skipped: result.skipped ?? false,
+    reason: result.reason,
+    log_date: result.logDate,
+    chat_id: result.chatId,
   });
 }

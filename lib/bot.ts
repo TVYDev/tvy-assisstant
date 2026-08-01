@@ -88,8 +88,16 @@ import {
   OWNER_MENU_PREVIEW_TEXT,
   OWNER_MENU_HELP_TEXT,
   OWNER_MENU_FIT_TEXT,
+  OWNER_MENU_CRONS_TEXT,
   ownerFitMenuKeyboard,
+  ownerCronsMenuKeyboard,
 } from "./owner-menu";
+import {
+  formatCronJobReply,
+  runFitnessReminderCron,
+  runGymMotivationCron,
+  runYoutubeReminderCron,
+} from "./cron-jobs";
 import {
   parseShortcodeFromMatch,
   promptShortcodePick,
@@ -1212,6 +1220,9 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     case "om:fit":
       await editSection(OWNER_MENU_FIT_TEXT, ownerFitMenuKeyboard());
       break;
+    case "om:cron":
+      await editSection(OWNER_MENU_CRONS_TEXT, ownerCronsMenuKeyboard());
+      break;
     case "om:pick:debts":
       await promptShortcodePick(ctx, "debts");
       break;
@@ -1267,6 +1278,39 @@ bot.callbackQuery(/^om:/, async (ctx) => {
       }
       await cancelSession(ctx.from!.id);
       await ctx.reply("Log session cancelled.");
+      break;
+    }
+    case "om:run:cron:youtube": {
+      try {
+        const result = await runYoutubeReminderCron();
+        await ctx.reply(formatCronJobReply("YouTube reminder", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ YouTube reminder failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:cron:fitness": {
+      try {
+        const result = await runFitnessReminderCron({ force: true });
+        await ctx.reply(formatCronJobReply("Fitness reminder", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ Fitness reminder failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:cron:gym": {
+      try {
+        const result = await runGymMotivationCron({ force: true });
+        await ctx.reply(formatCronJobReply("Gym motivation", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ Gym motivation failed: ${(err as Error).message}`);
+      }
       break;
     }
   }

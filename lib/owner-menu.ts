@@ -57,12 +57,21 @@ export const OWNER_MENU_FIT_TEXT =
   "<code>/gymreminder on|off</code> — weekday 4:45 PM nudge\n" +
   "<code>/cancelfit</code> — cancel in-progress session";
 
+export const OWNER_MENU_CRONS_TEXT =
+  "⏰ <b>Scheduled crons</b>\n\n" +
+  "Tap to run the same job as Vercel cron (posts for real).\n\n" +
+  "📺 <b>YouTube reminder</b> — 1st of month, 08:00 (UTC+7)\n" +
+  "🌅 <b>Fitness reminder</b> — daily 07:50 (UTC+7)\n" +
+  "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n\n" +
+  "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
+
 export const OWNER_MENU_HELP_TEXT =
   "📖 <b>Quick tip</b>\n\n" +
   "Type <code>/help</code> for the full command list.\n" +
   "Type <code>/menu</code> anytime to reopen this panel.\n" +
   "Use <b>Stickers</b> in the menu to configure follow-up stickers.\n" +
-  "Use <b>Fit</b> for daily logging shortcuts.\n\n" +
+  "Use <b>Fit</b> for daily logging shortcuts.\n" +
+  "Use <b>Crons</b> to manually re-run scheduled jobs.\n\n" +
   "Public users only see: /owe /qr /about /help";
 
 const PUBLIC_COMMANDS = [
@@ -105,6 +114,8 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
     .text("🎭 Stickers", "om:stickers")
     .row()
     .text("🏋️ Fit", "om:fit")
+    .text("⏰ Crons", "om:cron")
+    .row()
     .text("📖 Help", "om:help");
 }
 
@@ -152,6 +163,16 @@ export function ownerFitMenuKeyboard(): InlineKeyboard {
     .row()
     .text("✅ Reminder ON", "om:run:gymreminder:on")
     .text("🔕 Reminder OFF", "om:run:gymreminder:off")
+    .row()
+    .text("« Main menu", "om:main");
+}
+
+export function ownerCronsMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("📺 YouTube reminder", "om:run:cron:youtube")
+    .row()
+    .text("🌅 Fitness reminder", "om:run:cron:fitness")
+    .text("💪 Gym motivation", "om:run:cron:gym")
     .row()
     .text("« Main menu", "om:main");
 }

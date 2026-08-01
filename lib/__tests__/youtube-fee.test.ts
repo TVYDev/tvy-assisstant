@@ -31,12 +31,14 @@ const schedules: YoutubeFeeSchedule[] = [
 ];
 
 describe("resolveFeeForMonth", () => {
-  it("uses the fee whose date range overlaps the subscription month", () => {
+  it("uses the rate locked before the subscription month starts", () => {
     expect(resolveFeeForMonth(schedules, "2026-05")).toBe(1.19);
-    expect(resolveFeeForMonth(schedules, "2026-06")).toBe(1.49);
+    // June row bills at May 31 rate; mid-month June increase applies from July row onward
+    expect(resolveFeeForMonth(schedules, "2026-06")).toBe(1.19);
+    expect(resolveFeeForMonth(schedules, "2026-07")).toBe(1.49);
   });
 
-  it("keeps the old rate when effective date is after the subscription month", () => {
+  it("keeps the old rate on the effective month row when a new rate starts on the 1st", () => {
     const midMonthSchedules: YoutubeFeeSchedule[] = [
       {
         id: 1,
@@ -52,7 +54,41 @@ describe("resolveFeeForMonth", () => {
       },
     ];
     expect(resolveFeeForMonth(midMonthSchedules, "2026-06")).toBe(1.19);
-    expect(resolveFeeForMonth(midMonthSchedules, "2026-07")).toBe(1.49);
+    expect(resolveFeeForMonth(midMonthSchedules, "2026-07")).toBe(1.19);
+    expect(resolveFeeForMonth(midMonthSchedules, "2026-08")).toBe(1.49);
+  });
+
+  it("applies a July rate change to August rows (Aug 1 cron scenario)", () => {
+    const jul2026Schedules: YoutubeFeeSchedule[] = [
+      {
+        id: 1,
+        fee: 1.19,
+        effective_from: "2020-01-01",
+        effective_to: "2026-06-30",
+      },
+      {
+        id: 2,
+        fee: 1.65,
+        effective_from: "2026-07-01",
+        effective_to: null,
+      },
+    ];
+    expect(resolveFeeForMonth(jul2026Schedules, "2026-07")).toBe(1.19);
+    expect(resolveFeeForMonth(jul2026Schedules, "2026-08")).toBe(1.65);
+
+    const owing = sumMonthCharges(
+      [
+        { month: "2026-07-01", paid: false },
+        { month: "2026-08-01", paid: false },
+      ],
+      jul2026Schedules,
+      false,
+    );
+    expect(owing.total).toBeCloseTo(2.84);
+    expect(owing.months).toEqual([
+      { month: "2026-07-01", fee: 1.19 },
+      { month: "2026-08-01", fee: 1.65 },
+    ]);
   });
 
   it("throws when no schedule covers the month", () => {
@@ -77,7 +113,7 @@ describe("sumMonthCharges", () => {
       true,
     );
 
-    expect(owing.total).toBeCloseTo(2.68);
+    expect(owing.total).toBeCloseTo(2.38);
     expect(owing.months).toHaveLength(2);
   });
 });

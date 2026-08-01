@@ -34,24 +34,6 @@ export function isDateToken(token: string): boolean {
   return /^\d{4}-\d{2}(-\d{2})?$/.test(token.trim());
 }
 
-function subscriptionMonthRange(month: string): { start: string; end: string } {
-  const start = normalizeDate(month);
-  const [year, monthNum] = start.split("-").map(Number);
-  const end = new Date(Date.UTC(year, monthNum, 0)).toISOString().slice(0, 10);
-  return { start, end };
-}
-
-function scheduleCoversSubscriptionMonth(
-  schedule: YoutubeFeeSchedule,
-  monthStart: string,
-  monthEnd: string,
-): boolean {
-  return (
-    schedule.effective_from <= monthEnd &&
-    (schedule.effective_to === null || schedule.effective_to >= monthStart)
-  );
-}
-
 function dayBefore(date: string): string {
   const d = new Date(`${normalizeDate(date)}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
@@ -62,19 +44,19 @@ export function resolveFeeForMonth(
   schedules: YoutubeFeeSchedule[],
   month: string,
 ): number {
-  const { start, end } = subscriptionMonthRange(month);
-  const matches = schedules.filter((s) =>
-    scheduleCoversSubscriptionMonth(s, start, end),
-  );
+  const start = normalizeDate(month);
+  // Bill each subscription month at the rate locked on the last day of the prior month.
+  // A fee effective 2026-07-01 applies from the August row onward; July stays at the old rate.
+  const rateAsOf = dayBefore(start);
+  const active = getActiveFeeScheduleForDate(schedules, rateAsOf);
 
-  if (matches.length === 0) {
+  if (!active) {
     throw new Error(
       `No YouTube fee schedule covers ${start.slice(0, 7)}. Add one with /addytfee.`,
     );
   }
 
-  matches.sort((a, b) => b.effective_from.localeCompare(a.effective_from));
-  return matches[0].fee;
+  return active.fee;
 }
 
 export function sumMonthCharges(
