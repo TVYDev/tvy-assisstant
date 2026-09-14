@@ -52,9 +52,21 @@ Edit `.env.local` (already created) and fill in your values:
 ```
 BOT_TOKEN=your_bot_token_from_botfather
 WEBHOOK_URL=https://your-vercel-deployment.vercel.app
+DATABASE_URL=postgresql://...
 ```
 
-Add both variables to your **Vercel project settings** under _Environment Variables_ as well.
+Copy `.env.example` to `.env.local` and fill in the values. Add the same variables to your **Vercel project settings**.
+
+### Database (Neon)
+
+This app uses Neon Postgres via Drizzle. Create a Neon database (Vercel Marketplace: `vercel integration add neon`, or the Neon console), then:
+
+```
+pnpm db:apply-schema
+pnpm db:copy-supabase   # one-time copy from the old Supabase project
+```
+
+`db:copy-supabase` still needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` until the copy is done. After that you can remove those two variables.
 
 ### 3. Replace the QR Code Placeholder
 

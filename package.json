@@ -1,6 +1,6 @@
 {
   "name": "tvy-assistant",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,10 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:apply-schema": "tsx scripts/apply-schema.ts",
+    "db:copy-supabase": "tsx scripts/copy-supabase-to-neon.ts",
+    "db:verify": "tsx scripts/verify-supabase-to-neon.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.103.3",
+    "@neondatabase/serverless": "^1.1.0",
+    "drizzle-orm": "^0.45.2",
     "grammy": "^1.42.0",
     "next": "16.2.3",
     "react": "19.2.4",
@@ -23,9 +29,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.4",
+    "dotenv": "^17.4.2",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.4"
   }

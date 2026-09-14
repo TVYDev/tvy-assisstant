@@ -1,4 +1,6 @@
-import { supabase } from "./supabase";
+import { and, eq, isNull, lt } from "drizzle-orm";
+import { getDb } from "./db";
+import { youtubeFeeSchedules, youtubeSubscriptionMonths } from "./db/schema";
 import {
   getConfigOptional,
   getYouTubeMonthsForShortcode,
@@ -96,23 +98,27 @@ export function formatYoutubeMonthSummary(owing: YoutubeOwing): string {
 }
 
 export async function getYoutubeFeeSchedules(): Promise<YoutubeFeeSchedule[]> {
-  const { data, error } = await supabase
-    .from("youtube_fee_schedules")
-    .select("id, fee, effective_from, effective_to")
-    .order("effective_from", { ascending: true });
+  try {
+    const data = await getDb()
+      .select({
+        id: youtubeFeeSchedules.id,
+        fee: youtubeFeeSchedules.fee,
+        effectiveFrom: youtubeFeeSchedules.effectiveFrom,
+        effectiveTo: youtubeFeeSchedules.effectiveTo,
+      })
+      .from(youtubeFeeSchedules)
+      .orderBy(youtubeFeeSchedules.effectiveFrom);
 
-  if (error) {
-    throw new Error(`Failed to fetch YouTube fee schedules: ${error.message}`);
-  }
-
-  return ((data ?? []) as { id: number; fee: number | string; effective_from: string; effective_to: string | null }[]).map(
-    (row) => ({
+    return data.map((row) => ({
       id: row.id,
       fee: Number(row.fee),
-      effective_from: row.effective_from,
-      effective_to: row.effective_to,
-    }),
-  );
+      effective_from: row.effectiveFrom,
+      effective_to: row.effectiveTo,
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to fetch YouTube fee schedules: ${message}`);
+  }
 }
 
 export async function getCurrentYoutubeMonthlyFee(
@@ -195,16 +201,19 @@ export interface YoutubeReminderMember {
 export async function getYoutubeReminderOwings(): Promise<
   YoutubeReminderMember[]
 > {
-  const [{ data: unpaidRows }, schedules] = await Promise.all([
-    supabase
-      .from("youtube_subscription_months")
-      .select("shortcode, month")
-      .eq("paid", false),
+  const [unpaidRows, schedules] = await Promise.all([
+    getDb()
+      .select({
+        shortcode: youtubeSubscriptionMonths.shortcode,
+        month: youtubeSubscriptionMonths.month,
+      })
+      .from(youtubeSubscriptionMonths)
+      .where(eq(youtubeSubscriptionMonths.paid, false)),
     getYoutubeFeeSchedules(),
   ]);
 
   const byCode = new Map<string, { month: string }[]>();
-  for (const row of (unpaidRows ?? []) as { shortcode: string; month: string }[]) {
+  for (const row of unpaidRows) {
     const list = byCode.get(row.shortcode) ?? [];
     list.push({ month: row.month });
     byCode.set(row.shortcode, list);
@@ -234,45 +243,47 @@ export async function addYoutubeFeeSchedule(
   }
 
   const expiryForPrevious = dayBefore(from);
-  const { error: closeError } = await supabase
-    .from("youtube_fee_schedules")
-    .update({ effective_to: expiryForPrevious })
-    .is("effective_to", null)
-    .lt("effective_from", from);
+  const db = getDb();
 
-  if (closeError) {
+  try {
+    await db
+      .update(youtubeFeeSchedules)
+      .set({ effectiveTo: expiryForPrevious })
+      .where(
+        and(isNull(youtubeFeeSchedules.effectiveTo), lt(youtubeFeeSchedules.effectiveFrom, from)),
+      );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Failed to close previous YouTube fee schedule: ${closeError.message}`,
+      `Failed to close previous YouTube fee schedule: ${message}`,
     );
   }
 
-  const { data, error } = await supabase
-    .from("youtube_fee_schedules")
-    .insert({
-      fee,
-      effective_from: from,
-      effective_to: to,
-    })
-    .select("id, fee, effective_from, effective_to")
-    .single();
+  try {
+    const [row] = await db
+      .insert(youtubeFeeSchedules)
+      .values({
+        fee,
+        effectiveFrom: from,
+        effectiveTo: to,
+      })
+      .returning({
+        id: youtubeFeeSchedules.id,
+        fee: youtubeFeeSchedules.fee,
+        effectiveFrom: youtubeFeeSchedules.effectiveFrom,
+        effectiveTo: youtubeFeeSchedules.effectiveTo,
+      });
 
-  if (error) {
-    throw new Error(`Failed to add YouTube fee schedule: ${error.message}`);
+    return {
+      id: row.id,
+      fee: Number(row.fee),
+      effective_from: row.effectiveFrom,
+      effective_to: row.effectiveTo,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to add YouTube fee schedule: ${message}`);
   }
-
-  const row = data as {
-    id: number;
-    fee: number | string;
-    effective_from: string;
-    effective_to: string | null;
-  };
-
-  return {
-    id: row.id,
-    fee: Number(row.fee),
-    effective_from: row.effective_from,
-    effective_to: row.effective_to,
-  };
 }
 
 export function formatFeeScheduleLine(schedule: YoutubeFeeSchedule): string {

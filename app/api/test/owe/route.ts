@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ilike } from "drizzle-orm";
+import { getDb } from "@/lib/db";
+import { telegramUsers } from "@/lib/db/schema";
 import { buildOweMessage } from "@/lib/owe-message";
-import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -26,13 +28,12 @@ export async function GET(req: NextRequest) {
   // Resolve user_id from telegram_users if not provided
   if (!userId) {
     const normalized = username.startsWith("@") ? username.slice(1) : username;
-    const { data } = await supabase
-      .from("telegram_users")
-      .select("telegram_user_id")
-      .ilike("telegram_username", normalized)
-      .maybeSingle();
-    if (data?.telegram_user_id) {
-      userId = data.telegram_user_id;
+    const data = await getDb().query.telegramUsers.findFirst({
+      where: ilike(telegramUsers.telegramUsername, normalized),
+      columns: { telegramUserId: true },
+    });
+    if (data?.telegramUserId) {
+      userId = data.telegramUserId;
     }
   }
 

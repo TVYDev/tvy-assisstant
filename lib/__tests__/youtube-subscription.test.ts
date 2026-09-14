@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../supabase", () => ({
-  supabase: {},
-}));
-
 vi.mock("../youtube-fee", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../youtube-fee")>();
   return actual;

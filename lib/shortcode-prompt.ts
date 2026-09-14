@@ -1,8 +1,9 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
+import { getDb } from "./db";
+import { youtubeSubscriptionMembers } from "./db/schema";
 import { getAllDebtRecords } from "./debt";
 import { getAllTelegramUsers } from "./youtube-subscription";
-import { supabase } from "./supabase";
 
 export const SHORTCODE_PICK_LABELS: Record<string, string> = {
   debts: "Who do you want to check debts for?",
@@ -24,7 +25,9 @@ export async function getKnownShortcodes(): Promise<string[]> {
   const [users, debts, ytMembers] = await Promise.all([
     getAllTelegramUsers(),
     getAllDebtRecords(),
-    supabase.from("youtube_subscription_members").select("id"),
+    getDb()
+      .select({ id: youtubeSubscriptionMembers.id })
+      .from(youtubeSubscriptionMembers),
   ]);
 
   const codes = new Set<string>();
@@ -34,8 +37,8 @@ export async function getKnownShortcodes(): Promise<string[]> {
   for (const d of debts) {
     codes.add(d.shortcode.toUpperCase());
   }
-  for (const row of ytMembers.data ?? []) {
-    codes.add((row as { id: string }).id.toUpperCase());
+  for (const row of ytMembers) {
+    codes.add(row.id.toUpperCase());
   }
 
   return [...codes].sort();

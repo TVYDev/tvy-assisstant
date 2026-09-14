@@ -1,4 +1,7 @@
-import { supabase } from "./supabase";
+import { and, desc, eq, ilike } from "drizzle-orm";
+import { getDb } from "./db";
+import { decrementDepositBalance, incrementDepositBalance } from "./db/rpc";
+import { depositBalances, depositTransactions, telegramUsers } from "./db/schema";
 
 const DEPOSIT_TIMEZONE = "Asia/Phnom_Penh";
 
@@ -23,32 +26,34 @@ export class InsufficientDepositError extends Error {
   }
 }
 
+function dbError(prefix: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`${prefix}: ${message}`);
+}
+
 async function ensureDepositUserStub(shortcode: string): Promise<void> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
   const now = new Date().toISOString();
 
-  await supabase
-    .from("telegram_users")
-    .upsert(
-      {
-        shortcode: code,
-        first_name: code,
-        updated_at: now,
-      },
-      { onConflict: "shortcode", ignoreDuplicates: true },
-    );
+  await db
+    .insert(telegramUsers)
+    .values({
+      shortcode: code,
+      firstName: code,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: telegramUsers.shortcode });
 
-  await supabase
-    .from("deposit_balances")
-    .upsert(
-      {
-        shortcode: code,
-        balance: 0,
-        created_at: now,
-        updated_at: now,
-      },
-      { onConflict: "shortcode", ignoreDuplicates: true },
-    );
+  await db
+    .insert(depositBalances)
+    .values({
+      shortcode: code,
+      balance: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: depositBalances.shortcode });
 }
 
 async function insertDepositTransaction(params: {
@@ -58,15 +63,17 @@ async function insertDepositTransaction(params: {
   balance_after: number;
   note?: string;
 }): Promise<void> {
-  const { error } = await supabase.from("deposit_transactions").insert({
-    shortcode: params.shortcode,
-    type: params.type,
-    amount: params.amount,
-    balance_after: params.balance_after,
-    note: params.note ?? null,
-  });
-  if (error)
-    throw new Error(`Failed to insert deposit transaction: ${error.message}`);
+  try {
+    await getDb().insert(depositTransactions).values({
+      shortcode: params.shortcode,
+      type: params.type,
+      amount: params.amount,
+      balanceAfter: params.balance_after,
+      note: params.note ?? null,
+    });
+  } catch (error) {
+    throw dbError("Failed to insert deposit transaction", error);
+  }
 }
 
 export async function addDeposit(
@@ -77,14 +84,13 @@ export async function addDeposit(
   const code = shortcode.toUpperCase();
   await ensureDepositUserStub(code);
 
-  const { data: newBalance, error: rpcError } = await supabase.rpc(
-    "increment_deposit_balance",
-    { p_shortcode: code, p_amount: amount },
-  );
-  if (rpcError)
-    throw new Error(`Failed to add deposit: ${rpcError.message}`);
+  let balance: number;
+  try {
+    balance = await incrementDepositBalance(code, amount);
+  } catch (error) {
+    throw dbError("Failed to add deposit", error);
+  }
 
-  const balance = Number(newBalance);
   await insertDepositTransaction({
     shortcode: code,
     type: "add",
@@ -107,18 +113,17 @@ export async function reduceDeposit(
     throw new InsufficientDepositError(code, amount, current);
   }
 
-  const { data: newBalance, error: rpcError } = await supabase.rpc(
-    "decrement_deposit_balance",
-    { p_shortcode: code, p_amount: amount },
-  );
-  if (rpcError) {
-    if (rpcError.message.includes("insufficient_deposit_balance")) {
+  let balance: number;
+  try {
+    balance = await decrementDepositBalance(code, amount);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("insufficient_deposit_balance")) {
       throw new InsufficientDepositError(code, amount, current);
     }
-    throw new Error(`Failed to reduce deposit: ${rpcError.message}`);
+    throw dbError("Failed to reduce deposit", error);
   }
 
-  const balance = Number(newBalance);
   await insertDepositTransaction({
     shortcode: code,
     type: "reduce",
@@ -155,46 +160,62 @@ export async function applyDepositTowardPayment(
 export async function getDepositBalanceByShortcode(
   shortcode: string,
 ): Promise<number> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
 
-  const { data, error } = await supabase
-    .from("deposit_balances")
-    .select("balance")
-    .eq("shortcode", code)
-    .maybeSingle();
-
-  if (error) throw new Error(`Failed to fetch deposit balance: ${error.message}`);
-  if (!data) return 0;
-  return Number(data.balance);
+  try {
+    const data = await db.query.depositBalances.findFirst({
+      where: eq(depositBalances.shortcode, code),
+      columns: { balance: true },
+    });
+    if (!data) return 0;
+    return Number(data.balance);
+  } catch (error) {
+    throw dbError("Failed to fetch deposit balance", error);
+  }
 }
 
 export async function getDepositTransactions(
   shortcode: string,
   type?: DepositTransactionType,
 ): Promise<DepositTransaction[]> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
 
-  let query = supabase
-    .from("deposit_transactions")
-    .select("id, shortcode, type, amount, balance_after, note, created_at")
-    .eq("shortcode", code)
-    .order("created_at", { ascending: false });
+  try {
+    const rows = await db
+      .select({
+        id: depositTransactions.id,
+        shortcode: depositTransactions.shortcode,
+        type: depositTransactions.type,
+        amount: depositTransactions.amount,
+        balanceAfter: depositTransactions.balanceAfter,
+        note: depositTransactions.note,
+        createdAt: depositTransactions.createdAt,
+      })
+      .from(depositTransactions)
+      .where(
+        type
+          ? and(
+              eq(depositTransactions.shortcode, code),
+              eq(depositTransactions.type, type),
+            )
+          : eq(depositTransactions.shortcode, code),
+      )
+      .orderBy(desc(depositTransactions.createdAt));
 
-  if (type) query = query.eq("type", type);
-
-  const { data, error } = await query;
-  if (error)
-    throw new Error(`Failed to fetch deposit transactions: ${error.message}`);
-
-  return (data ?? []).map((row) => ({
-    id: row.id as number,
-    shortcode: row.shortcode as string,
-    type: row.type as DepositTransactionType,
-    amount: Number(row.amount),
-    balance_after: Number(row.balance_after),
-    note: (row.note as string | null) ?? null,
-    created_at: row.created_at as string,
-  }));
+    return rows.map((row) => ({
+      id: row.id,
+      shortcode: row.shortcode,
+      type: row.type as DepositTransactionType,
+      amount: Number(row.amount),
+      balance_after: Number(row.balanceAfter),
+      note: row.note ?? null,
+      created_at: row.createdAt,
+    }));
+  } catch (error) {
+    throw dbError("Failed to fetch deposit transactions", error);
+  }
 }
 
 export function formatDepositTransactionTimestamp(iso: string): string {
@@ -230,28 +251,35 @@ export async function getDepositReductionHistory(
 }
 
 export async function getDepositByUsername(username: string): Promise<number> {
+  const db = getDb();
   const normalized = username.startsWith("@") ? username.slice(1) : username;
 
-  const { data: user, error: userError } = await supabase
-    .from("telegram_users")
-    .select("shortcode")
-    .ilike("telegram_username", normalized)
-    .maybeSingle();
-
-  if (userError) throw new Error(`Failed to fetch user: ${userError.message}`);
+  let user: { shortcode: string | null } | undefined;
+  try {
+    user = await db.query.telegramUsers.findFirst({
+      where: ilike(telegramUsers.telegramUsername, normalized),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch user", error);
+  }
   if (!user?.shortcode) return 0;
 
   return getDepositBalanceByShortcode(user.shortcode);
 }
 
 export async function getDepositByUserId(userId: number): Promise<number> {
-  const { data: user, error: userError } = await supabase
-    .from("telegram_users")
-    .select("shortcode")
-    .eq("telegram_user_id", userId)
-    .maybeSingle();
+  const db = getDb();
 
-  if (userError) throw new Error(`Failed to fetch user: ${userError.message}`);
+  let user: { shortcode: string | null } | undefined;
+  try {
+    user = await db.query.telegramUsers.findFirst({
+      where: eq(telegramUsers.telegramUserId, userId),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch user", error);
+  }
   if (!user?.shortcode) return 0;
 
   return getDepositBalanceByShortcode(user.shortcode);
@@ -262,16 +290,19 @@ export async function resolveDepositForTelegramUser(
   userId: number,
   username: string,
 ): Promise<number> {
+  const db = getDb();
   const handle = username.trim();
   if (handle) {
     const normalized = handle.startsWith("@") ? handle.slice(1) : handle;
-    const { data: user, error: userError } = await supabase
-      .from("telegram_users")
-      .select("shortcode")
-      .ilike("telegram_username", normalized)
-      .maybeSingle();
-    if (userError)
-      throw new Error(`Failed to fetch user: ${userError.message}`);
+    let user: { shortcode: string | null } | undefined;
+    try {
+      user = await db.query.telegramUsers.findFirst({
+        where: ilike(telegramUsers.telegramUsername, normalized),
+        columns: { shortcode: true },
+      });
+    } catch (error) {
+      throw dbError("Failed to fetch user", error);
+    }
     if (user?.shortcode) {
       return getDepositBalanceByShortcode(user.shortcode);
     }
@@ -283,18 +314,24 @@ export async function resolveDepositForTelegramUser(
 }
 
 export async function getAllDepositTotals(): Promise<Map<string, number>> {
-  const { data, error } = await supabase
-    .from("deposit_balances")
-    .select("shortcode, balance");
+  const db = getDb();
 
-  if (error)
-    throw new Error(`Failed to fetch all deposit balances: ${error.message}`);
+  try {
+    const data = await db
+      .select({
+        shortcode: depositBalances.shortcode,
+        balance: depositBalances.balance,
+      })
+      .from(depositBalances);
 
-  const totals = new Map<string, number>();
-  for (const row of data ?? []) {
-    totals.set(row.shortcode as string, Number(row.balance));
+    const totals = new Map<string, number>();
+    for (const row of data) {
+      totals.set(row.shortcode, Number(row.balance));
+    }
+    return totals;
+  } catch (error) {
+    throw dbError("Failed to fetch all deposit balances", error);
   }
-  return totals;
 }
 
 /** @deprecated Use getDepositBalanceByShortcode */

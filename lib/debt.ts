@@ -1,4 +1,7 @@
-import { supabase } from "./supabase";
+import { eq, ilike } from "drizzle-orm";
+import { getDb } from "./db";
+import { decrementOwesMe, incrementOwesMe } from "./db/rpc";
+import { debtItems, debtRecords, telegramUsers } from "./db/schema";
 
 export interface DebtItem {
   id: number;
@@ -16,207 +19,238 @@ export interface DebtRecord {
   items: DebtItem[];
 }
 
+function dbError(prefix: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`${prefix}: ${message}`);
+}
+
+function displayName(
+  user: { firstName?: string | null; lastName?: string | null } | null | undefined,
+  fallback: string,
+): string {
+  if (!user) return fallback;
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  return name || fallback;
+}
+
+function mapItems(
+  items: Array<{
+    id: number;
+    description: string;
+    amount: number | string;
+    date: string;
+    paid: boolean;
+  }>,
+): DebtItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    description: item.description,
+    amount: Number(item.amount),
+    date: item.date,
+    paid: Boolean(item.paid),
+  }));
+}
+
 export async function addDebt(
   shortcode: string,
   amount: number,
   description: string,
 ): Promise<void> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
   const today = new Date().toISOString().split("T")[0];
-
-  // Ensure a telegram_users stub exists so the FK on debt_records is satisfied
-  await supabase
-    .from("telegram_users")
-    .upsert(
-      {
-        shortcode: code,
-        first_name: code,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "shortcode", ignoreDuplicates: true },
-    );
-
-  // Upsert debt_record (create if not exists)
-  await supabase
-    .from("debt_records")
-    .upsert(
-      {
-        shortcode: code,
-        owes_me: 0,
-        i_owe: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "shortcode", ignoreDuplicates: true },
-    );
-
-  // Get the record id
-  const { data: rec, error: recError } = await supabase
-    .from("debt_records")
-    .select("id")
-    .eq("shortcode", code)
-    .single();
-  if (recError)
-    throw new Error(`Failed to get debt record: ${recError.message}`);
-
-  // Insert debt item
   const now = new Date().toISOString();
-  const { error: itemError } = await supabase.from("debt_items").insert({
-    debt_record_id: (rec as { id: number }).id,
-    description,
-    amount,
-    date: today,
-    created_at: now,
-    updated_at: now,
-  });
-  if (itemError)
-    throw new Error(`Failed to insert debt item: ${itemError.message}`);
 
-  // Increment owes_me
-  const { error: updateError } = await supabase.rpc("increment_owes_me", {
-    p_shortcode: code,
-    p_amount: amount,
-  });
-  if (updateError)
-    throw new Error(`Failed to update owes_me: ${updateError.message}`);
+  await db
+    .insert(telegramUsers)
+    .values({
+      shortcode: code,
+      firstName: code,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: telegramUsers.shortcode });
+
+  await db
+    .insert(debtRecords)
+    .values({
+      shortcode: code,
+      owesMe: 0,
+      iOwe: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: debtRecords.shortcode });
+
+  let rec: { id: number } | undefined;
+  try {
+    rec = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.shortcode, code),
+      columns: { id: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to get debt record", error);
+  }
+  if (!rec) throw new Error("Failed to get debt record: not found");
+
+  try {
+    await db.insert(debtItems).values({
+      debtRecordId: rec.id,
+      description,
+      amount,
+      date: today,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (error) {
+    throw dbError("Failed to insert debt item", error);
+  }
+
+  try {
+    await incrementOwesMe(code, amount);
+  } catch (error) {
+    throw dbError("Failed to update owes_me", error);
+  }
 }
 
 export async function toggleDebtItemPaid(
   itemId: number,
   paid: boolean,
 ): Promise<{ shortcode: string; amount: number; newlyPaid: boolean } | null> {
-  const { data: item, error: fetchError } = await supabase
-    .from("debt_items")
-    .select("id, amount, paid, debt_record_id")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (fetchError)
-    throw new Error(`Failed to fetch item: ${fetchError.message}`);
+  const db = getDb();
+
+  let item:
+    | { id: number; amount: number; paid: boolean; debtRecordId: number }
+    | undefined;
+  try {
+    item = await db.query.debtItems.findFirst({
+      where: eq(debtItems.id, itemId),
+      columns: {
+        id: true,
+        amount: true,
+        paid: true,
+        debtRecordId: true,
+      },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch item", error);
+  }
   if (!item) return null;
 
-  const wasPaid = Boolean((item as { paid: boolean }).paid);
+  const wasPaid = Boolean(item.paid);
 
-  const { error: updateError } = await supabase
-    .from("debt_items")
-    .update({ paid })
-    .eq("id", itemId);
-  if (updateError)
-    throw new Error(`Failed to update item: ${updateError.message}`);
-
-  const { data: rec, error: recError } = await supabase
-    .from("debt_records")
-    .select("shortcode")
-    .eq("id", (item as { debt_record_id: number }).debt_record_id)
-    .single();
-  if (recError) throw new Error(`Failed to fetch record: ${recError.message}`);
-
-  const shortcode = (rec as { shortcode: string }).shortcode;
-  const amount = Number((item as { amount: number }).amount);
-
-  // Update owes_me: if marking paid, decrement; if unpaid, increment
-  if (paid && !wasPaid) {
-    await supabase.rpc("decrement_owes_me", {
-      p_shortcode: shortcode,
-      p_amount: amount,
-    });
-  } else if (!paid && wasPaid) {
-    await supabase.rpc("increment_owes_me", {
-      p_shortcode: shortcode,
-      p_amount: amount,
-    });
+  try {
+    await db.update(debtItems).set({ paid }).where(eq(debtItems.id, itemId));
+  } catch (error) {
+    throw dbError("Failed to update item", error);
   }
 
-  return { shortcode, amount, newlyPaid: paid && !wasPaid };
+  let rec: { shortcode: string } | undefined;
+  try {
+    rec = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.id, item.debtRecordId),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch record", error);
+  }
+  if (!rec) throw new Error("Failed to fetch record: not found");
+
+  const amount = Number(item.amount);
+
+  if (paid && !wasPaid) {
+    await decrementOwesMe(rec.shortcode, amount);
+  } else if (!paid && wasPaid) {
+    await incrementOwesMe(rec.shortcode, amount);
+  }
+
+  return { shortcode: rec.shortcode, amount, newlyPaid: paid && !wasPaid };
 }
 
 export async function getDebtByShortcode(
   shortcode: string,
 ): Promise<DebtRecord | null> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
 
-  const { data, error } = await supabase
-    .from("debt_records")
-    .select(
-      "owes_me, i_owe, debt_items(id, description, amount, date, paid), telegram_users(first_name, last_name)",
-    )
-    .eq("shortcode", code)
-    .maybeSingle();
+  try {
+    const data = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.shortcode, code),
+      with: {
+        items: true,
+        user: {
+          columns: { firstName: true, lastName: true },
+        },
+      },
+    });
 
-  if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
-  if (!data) return null;
+    if (!data) return null;
 
-  const tuArr = data.telegram_users as
-    | { first_name: string; last_name?: string }[]
-    | null;
-  const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
-  const name = tu
-    ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
-    : code;
-
-  return {
-    shortcode: code,
-    name,
-    owes_me: Number(data.owes_me),
-    i_owe: Number(data.i_owe),
-    items: (data.debt_items as DebtItem[]).map((item) => ({
-      id: item.id,
-      description: item.description,
-      amount: Number(item.amount),
-      date: item.date,
-      paid: Boolean(item.paid),
-    })),
-  };
+    return {
+      shortcode: code,
+      name: displayName(data.user, code),
+      owes_me: Number(data.owesMe),
+      i_owe: Number(data.iOwe),
+      items: mapItems(data.items),
+    };
+  } catch (error) {
+    throw dbError("Failed to fetch debt", error);
+  }
 }
 
 export async function markAllPaid(shortcode: string): Promise<void> {
+  const db = getDb();
   const code = shortcode.toUpperCase();
 
-  const { data: rec, error: recError } = await supabase
-    .from("debt_records")
-    .select("id")
-    .eq("shortcode", code)
-    .maybeSingle();
-  if (recError) throw new Error(`Failed to find record: ${recError.message}`);
+  let rec: { id: number } | undefined;
+  try {
+    rec = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.shortcode, code),
+      columns: { id: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to find record", error);
+  }
   if (!rec) throw new Error(`No debt record for ${code}`);
 
-  const id = (rec as { id: number }).id;
-
-  await supabase.from("debt_items").delete().eq("debt_record_id", id);
-  await supabase
-    .from("debt_records")
-    .update({ owes_me: 0, i_owe: 0 })
-    .eq("shortcode", code);
+  await db.delete(debtItems).where(eq(debtItems.debtRecordId, rec.id));
+  await db
+    .update(debtRecords)
+    .set({ owesMe: 0, iOwe: 0 })
+    .where(eq(debtRecords.shortcode, code));
 }
 
 export async function cancelDebtItem(
   itemId: number,
 ): Promise<{ shortcode: string; amount: number } | null> {
-  const { data: item, error: fetchError } = await supabase
-    .from("debt_items")
-    .select("id, amount, debt_record_id")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (fetchError)
-    throw new Error(`Failed to fetch item: ${fetchError.message}`);
+  const db = getDb();
+
+  let item: { id: number; amount: number; debtRecordId: number } | undefined;
+  try {
+    item = await db.query.debtItems.findFirst({
+      where: eq(debtItems.id, itemId),
+      columns: { id: true, amount: true, debtRecordId: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch item", error);
+  }
   if (!item) return null;
 
-  const { data: rec, error: recError } = await supabase
-    .from("debt_records")
-    .select("shortcode")
-    .eq("id", (item as { debt_record_id: number }).debt_record_id)
-    .single();
-  if (recError) throw new Error(`Failed to fetch record: ${recError.message}`);
+  let rec: { shortcode: string } | undefined;
+  try {
+    rec = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.id, item.debtRecordId),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch record", error);
+  }
+  if (!rec) throw new Error("Failed to fetch record: not found");
 
-  const shortcode = (rec as { shortcode: string }).shortcode;
-  const amount = Number((item as { amount: number }).amount);
+  const amount = Number(item.amount);
+  await db.delete(debtItems).where(eq(debtItems.id, itemId));
+  await decrementOwesMe(rec.shortcode, amount);
 
-  await supabase.from("debt_items").delete().eq("id", itemId);
-  await supabase.rpc("decrement_owes_me", {
-    p_shortcode: shortcode,
-    p_amount: amount,
-  });
-
-  return { shortcode, amount };
+  return { shortcode: rec.shortcode, amount };
 }
 
 export async function updateDebtItem(
@@ -224,153 +258,122 @@ export async function updateDebtItem(
   newAmount: number,
   newDescription: string,
 ): Promise<{ shortcode: string; oldAmount: number; newAmount: number } | null> {
-  const { data: item, error: fetchError } = await supabase
-    .from("debt_items")
-    .select("id, amount, paid, debt_record_id")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (fetchError)
-    throw new Error(`Failed to fetch item: ${fetchError.message}`);
+  const db = getDb();
+
+  let item:
+    | { id: number; amount: number; paid: boolean; debtRecordId: number }
+    | undefined;
+  try {
+    item = await db.query.debtItems.findFirst({
+      where: eq(debtItems.id, itemId),
+      columns: {
+        id: true,
+        amount: true,
+        paid: true,
+        debtRecordId: true,
+      },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch item", error);
+  }
   if (!item) return null;
 
-  const oldAmount = Number((item as { amount: number }).amount);
-  const isPaid = Boolean((item as { paid: boolean }).paid);
+  const oldAmount = Number(item.amount);
+  const isPaid = Boolean(item.paid);
 
-  const { data: rec, error: recError } = await supabase
-    .from("debt_records")
-    .select("shortcode")
-    .eq("id", (item as { debt_record_id: number }).debt_record_id)
-    .single();
-  if (recError) throw new Error(`Failed to fetch record: ${recError.message}`);
+  let rec: { shortcode: string } | undefined;
+  try {
+    rec = await db.query.debtRecords.findFirst({
+      where: eq(debtRecords.id, item.debtRecordId),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch record", error);
+  }
+  if (!rec) throw new Error("Failed to fetch record: not found");
 
-  const shortcode = (rec as { shortcode: string }).shortcode;
+  try {
+    await db
+      .update(debtItems)
+      .set({ amount: newAmount, description: newDescription })
+      .where(eq(debtItems.id, itemId));
+  } catch (error) {
+    throw dbError("Failed to update item", error);
+  }
 
-  const { error: updateError } = await supabase
-    .from("debt_items")
-    .update({ amount: newAmount, description: newDescription })
-    .eq("id", itemId);
-  if (updateError)
-    throw new Error(`Failed to update item: ${updateError.message}`);
-
-  // Adjust owes_me only if the item is unpaid (paid items aren't counted)
   if (!isPaid) {
     const diff = newAmount - oldAmount;
     if (diff > 0) {
-      await supabase.rpc("increment_owes_me", {
-        p_shortcode: shortcode,
-        p_amount: diff,
-      });
+      await incrementOwesMe(rec.shortcode, diff);
     } else if (diff < 0) {
-      await supabase.rpc("decrement_owes_me", {
-        p_shortcode: shortcode,
-        p_amount: -diff,
-      });
+      await decrementOwesMe(rec.shortcode, -diff);
     }
   }
 
-  return { shortcode, oldAmount, newAmount };
+  return { shortcode: rec.shortcode, oldAmount, newAmount };
 }
 
 export async function getDebtByUsername(
   username: string,
 ): Promise<DebtRecord | null> {
+  const db = getDb();
   const normalized = username.startsWith("@") ? username.slice(1) : username;
 
-  // Resolve shortcode from telegram_users
-  const { data: user, error: userError } = await supabase
-    .from("telegram_users")
-    .select("shortcode")
-    .ilike("telegram_username", normalized)
-    .maybeSingle();
-
-  if (userError) throw new Error(`Failed to fetch user: ${userError.message}`);
+  let user: { shortcode: string | null } | undefined;
+  try {
+    user = await db.query.telegramUsers.findFirst({
+      where: ilike(telegramUsers.telegramUsername, normalized),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch user", error);
+  }
   if (!user?.shortcode) return null;
 
-  const { data, error } = await supabase
-    .from("debt_records")
-    .select(
-      "owes_me, i_owe, debt_items(id, description, amount, date, paid), telegram_users(first_name, last_name)",
-    )
-    .eq("shortcode", user.shortcode)
-    .maybeSingle();
-
-  if (error) throw new Error(`Failed to fetch debt: ${error.message}`);
-  if (!data) return null;
-
-  const tuArr = data.telegram_users as
-    | { first_name: string; last_name?: string }[]
-    | null;
-  const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
-  const name = tu
-    ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
-    : user.shortcode;
-
-  return {
-    shortcode: user.shortcode,
-    name,
-    owes_me: Number(data.owes_me),
-    i_owe: Number(data.i_owe),
-    items: (data.debt_items as DebtItem[]).map((item) => ({
-      id: item.id,
-      description: item.description,
-      amount: Number(item.amount),
-      date: item.date,
-      paid: Boolean(item.paid),
-    })),
-  };
+  return getDebtByShortcode(user.shortcode);
 }
 
 export async function getDebtByUserId(
   userId: number,
 ): Promise<DebtRecord | null> {
-  const { data: user, error: userError } = await supabase
-    .from("telegram_users")
-    .select("shortcode")
-    .eq("telegram_user_id", userId)
-    .maybeSingle();
+  const db = getDb();
 
-  if (userError) throw new Error(`Failed to fetch user: ${userError.message}`);
+  let user: { shortcode: string | null } | undefined;
+  try {
+    user = await db.query.telegramUsers.findFirst({
+      where: eq(telegramUsers.telegramUserId, userId),
+      columns: { shortcode: true },
+    });
+  } catch (error) {
+    throw dbError("Failed to fetch user", error);
+  }
   if (!user?.shortcode) return null;
 
   return getDebtByShortcode(user.shortcode);
 }
 
 export async function getAllDebtRecords(): Promise<DebtRecord[]> {
-  const { data, error } = await supabase
-    .from("debt_records")
-    .select(
-      "shortcode, owes_me, i_owe, debt_items(id, description, amount, date, paid), telegram_users(first_name, last_name)",
-    )
-    .order("shortcode");
+  const db = getDb();
 
-  if (error) throw new Error(`Failed to fetch all debts: ${error.message}`);
+  try {
+    const rows = await db.query.debtRecords.findMany({
+      with: {
+        items: true,
+        user: {
+          columns: { firstName: true, lastName: true },
+        },
+      },
+      orderBy: (table, { asc }) => [asc(table.shortcode)],
+    });
 
-  return (
-    (data ?? []) as Array<{
-      shortcode: string;
-      owes_me: number;
-      i_owe: number;
-      debt_items: DebtItem[];
-      telegram_users: { first_name: string; last_name?: string }[] | null;
-    }>
-  ).map((row) => {
-    const tuArr = row.telegram_users;
-    const tu = Array.isArray(tuArr) ? (tuArr[0] ?? null) : null;
-    const name = tu
-      ? [tu.first_name, tu.last_name].filter(Boolean).join(" ")
-      : row.shortcode;
-    return {
+    return rows.map((row) => ({
       shortcode: row.shortcode,
-      name,
-      owes_me: Number(row.owes_me),
-      i_owe: Number(row.i_owe),
-      items: row.debt_items.map((item) => ({
-        id: item.id,
-        description: item.description,
-        amount: Number(item.amount),
-        date: item.date,
-        paid: Boolean(item.paid),
-      })),
-    };
-  });
+      name: displayName(row.user, row.shortcode),
+      owes_me: Number(row.owesMe),
+      i_owe: Number(row.iOwe),
+      items: mapItems(row.items),
+    }));
+  } catch (error) {
+    throw dbError("Failed to fetch all debts", error);
+  }
 }

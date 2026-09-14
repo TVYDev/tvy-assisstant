@@ -1,4 +1,6 @@
-import { supabase } from "./supabase";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { getDb } from "./db";
+import { dailyFitnessLogs, fitnessLogSessions } from "./db/schema";
 import { getConfig, setConfig } from "./youtube-subscription";
 
 const TIMEZONE = "Asia/Phnom_Penh";
@@ -519,17 +521,44 @@ function isSessionExpired(session: FitnessLogSession): boolean {
   return new Date(session.expires_at).getTime() <= Date.now();
 }
 
+function dbError(prefix: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`${prefix}: ${message}`);
+}
+
+function mapDailyLog(row: typeof dailyFitnessLogs.$inferSelect): DailyFitnessLog {
+  return {
+    id: row.id,
+    log_date: row.logDate,
+    weight_kg: Number(row.weightKg),
+    gym_status: row.gymStatus as GymStatus,
+    gym_session: row.gymSession,
+    gym_minutes: row.gymMinutes,
+  };
+}
+
+function mapSession(row: typeof fitnessLogSessions.$inferSelect): FitnessLogSession {
+  return {
+    telegram_user_id: row.telegramUserId,
+    step: row.step as SessionStep,
+    weight_kg: row.weightKg === null ? null : Number(row.weightKg),
+    gym_session: row.gymSession,
+    target_log_date: row.targetLogDate,
+    expires_at: row.expiresAt,
+  };
+}
+
 export async function getLogForDate(
   logDate: string,
 ): Promise<DailyFitnessLog | null> {
-  const { data, error } = await supabase
-    .from("daily_fitness_logs")
-    .select("*")
-    .eq("log_date", logDate)
-    .maybeSingle();
-
-  if (error) throw new Error(`Failed to get fitness log: ${error.message}`);
-  return data as DailyFitnessLog | null;
+  try {
+    const data = await getDb().query.dailyFitnessLogs.findFirst({
+      where: eq(dailyFitnessLogs.logDate, logDate),
+    });
+    return data ? mapDailyLog(data) : null;
+  } catch (error) {
+    throw dbError("Failed to get fitness log", error);
+  }
 }
 
 export async function upsertDailyLog(log: {
@@ -540,24 +569,33 @@ export async function upsertDailyLog(log: {
   gym_minutes: number | null;
 }): Promise<DailyFitnessLog> {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("daily_fitness_logs")
-    .upsert(
-      {
-        log_date: log.log_date,
-        weight_kg: log.weight_kg,
-        gym_status: log.gym_status,
-        gym_session: log.gym_session,
-        gym_minutes: log.gym_minutes,
-        updated_at: now,
-      },
-      { onConflict: "log_date" },
-    )
-    .select("*")
-    .single();
+  try {
+    const [data] = await getDb()
+      .insert(dailyFitnessLogs)
+      .values({
+        logDate: log.log_date,
+        weightKg: log.weight_kg,
+        gymStatus: log.gym_status,
+        gymSession: log.gym_session,
+        gymMinutes: log.gym_minutes,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: dailyFitnessLogs.logDate,
+        set: {
+          weightKg: log.weight_kg,
+          gymStatus: log.gym_status,
+          gymSession: log.gym_session,
+          gymMinutes: log.gym_minutes,
+          updatedAt: now,
+        },
+      })
+      .returning();
 
-  if (error) throw new Error(`Failed to save fitness log: ${error.message}`);
-  return data as DailyFitnessLog;
+    return mapDailyLog(data);
+  } catch (error) {
+    throw dbError("Failed to save fitness log", error);
+  }
 }
 
 export async function getLogHistory(
@@ -567,30 +605,34 @@ export async function getLogHistory(
   const { gridStart } = getGymActivityGridRange(weeks, today);
   const logStart = addDaysToDateString(gridStart, 1);
 
-  const { data, error } = await supabase
-    .from("daily_fitness_logs")
-    .select("*")
-    .gte("log_date", logStart)
-    .lte("log_date", today)
-    .order("log_date", { ascending: false });
+  try {
+    const data = await getDb()
+      .select()
+      .from(dailyFitnessLogs)
+      .where(
+        and(gte(dailyFitnessLogs.logDate, logStart), lte(dailyFitnessLogs.logDate, today)),
+      )
+      .orderBy(desc(dailyFitnessLogs.logDate));
 
-  if (error) throw new Error(`Failed to get fitness history: ${error.message}`);
-  return (data ?? []) as DailyFitnessLog[];
+    return data.map(mapDailyLog);
+  } catch (error) {
+    throw dbError("Failed to get fitness history", error);
+  }
 }
 
 export async function getSession(
   telegramUserId: number,
 ): Promise<FitnessLogSession | null> {
-  const { data, error } = await supabase
-    .from("fitness_log_sessions")
-    .select("*")
-    .eq("telegram_user_id", telegramUserId)
-    .maybeSingle();
-
-  if (error) throw new Error(`Failed to get log session: ${error.message}`);
-  if (!data) return null;
-
-  const session = data as FitnessLogSession;
+  let session: FitnessLogSession | null;
+  try {
+    const data = await getDb().query.fitnessLogSessions.findFirst({
+      where: eq(fitnessLogSessions.telegramUserId, telegramUserId),
+    });
+    session = data ? mapSession(data) : null;
+  } catch (error) {
+    throw dbError("Failed to get log session", error);
+  }
+  if (!session) return null;
   if (isSessionExpired(session)) {
     await cancelSession(telegramUserId);
     return null;
@@ -608,20 +650,32 @@ export async function startSession(
   if (dateError) return { reply: dateError };
 
   const now = new Date().toISOString();
-  const { error } = await supabase.from("fitness_log_sessions").upsert(
-    {
-      telegram_user_id: telegramUserId,
-      step: "weight",
-      weight_kg: null,
-      gym_session: null,
-      target_log_date: logDate,
-      expires_at: sessionExpiryIso(),
-      updated_at: now,
-    },
-    { onConflict: "telegram_user_id" },
-  );
-
-  if (error) throw new Error(`Failed to start log session: ${error.message}`);
+  try {
+    await getDb()
+      .insert(fitnessLogSessions)
+      .values({
+        telegramUserId,
+        step: "weight",
+        weightKg: null,
+        gymSession: null,
+        targetLogDate: logDate,
+        expiresAt: sessionExpiryIso(),
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: fitnessLogSessions.telegramUserId,
+        set: {
+          step: "weight",
+          weightKg: null,
+          gymSession: null,
+          targetLogDate: logDate,
+          expiresAt: sessionExpiryIso(),
+          updatedAt: now,
+        },
+      });
+  } catch (error) {
+    throw dbError("Failed to start log session", error);
+  }
 
   const backdateNote =
     logDate !== todayInPhnomPenh()
@@ -642,28 +696,36 @@ export async function startSession(
 }
 
 export async function cancelSession(telegramUserId: number): Promise<void> {
-  const { error } = await supabase
-    .from("fitness_log_sessions")
-    .delete()
-    .eq("telegram_user_id", telegramUserId);
-
-  if (error) throw new Error(`Failed to cancel log session: ${error.message}`);
+  try {
+    await getDb()
+      .delete(fitnessLogSessions)
+      .where(eq(fitnessLogSessions.telegramUserId, telegramUserId));
+  } catch (error) {
+    throw dbError("Failed to cancel log session", error);
+  }
 }
 
 async function updateSession(
   telegramUserId: number,
   patch: Partial<FitnessLogSession>,
 ): Promise<void> {
-  const { error } = await supabase
-    .from("fitness_log_sessions")
-    .update({
-      ...patch,
-      expires_at: sessionExpiryIso(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("telegram_user_id", telegramUserId);
-
-  if (error) throw new Error(`Failed to update log session: ${error.message}`);
+  try {
+    await getDb()
+      .update(fitnessLogSessions)
+      .set({
+        ...(patch.step !== undefined ? { step: patch.step } : {}),
+        ...(patch.weight_kg !== undefined ? { weightKg: patch.weight_kg } : {}),
+        ...(patch.gym_session !== undefined ? { gymSession: patch.gym_session } : {}),
+        ...(patch.target_log_date !== undefined
+          ? { targetLogDate: patch.target_log_date }
+          : {}),
+        expiresAt: sessionExpiryIso(),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(fitnessLogSessions.telegramUserId, telegramUserId));
+  } catch (error) {
+    throw dbError("Failed to update log session", error);
+  }
 }
 
 async function saveAndConfirm(

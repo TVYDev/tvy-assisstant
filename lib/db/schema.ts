@@ -1,0 +1,173 @@
+import { relations } from "drizzle-orm";
+import {
+  bigint,
+  bigserial,
+  boolean,
+  date,
+  integer,
+  numeric,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  unique,
+} from "drizzle-orm/pg-core";
+
+const timestamps = {
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+};
+
+export const telegramUsers = pgTable("telegram_users", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  telegramUserId: bigint("telegram_user_id", { mode: "number" }).unique(),
+  telegramUsername: text("telegram_username"),
+  shortcode: text("shortcode").unique(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name"),
+  ...timestamps,
+});
+
+export const debtRecords = pgTable("debt_records", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  shortcode: text("shortcode")
+    .notNull()
+    .unique()
+    .references(() => telegramUsers.shortcode, {
+      onDelete: "cascade",
+      onUpdate: "cascade",
+    }),
+  owesMe: numeric("owes_me", { precision: 10, scale: 2, mode: "number" })
+    .notNull()
+    .default(0),
+  iOwe: numeric("i_owe", { precision: 10, scale: 2, mode: "number" })
+    .notNull()
+    .default(0),
+  ...timestamps,
+});
+
+export const debtItems = pgTable("debt_items", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  debtRecordId: bigint("debt_record_id", { mode: "number" })
+    .notNull()
+    .references(() => debtRecords.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull(),
+  date: date("date", { mode: "string" }).notNull(),
+  paid: boolean("paid").notNull().default(false),
+  ...timestamps,
+});
+
+export const depositBalances = pgTable("deposit_balances", {
+  shortcode: text("shortcode")
+    .primaryKey()
+    .references(() => telegramUsers.shortcode, {
+      onDelete: "cascade",
+      onUpdate: "cascade",
+    }),
+  balance: numeric("balance", { precision: 10, scale: 2, mode: "number" })
+    .notNull()
+    .default(0),
+  ...timestamps,
+});
+
+export const depositTransactions = pgTable("deposit_transactions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  shortcode: text("shortcode")
+    .notNull()
+    .references(() => telegramUsers.shortcode, {
+      onDelete: "cascade",
+      onUpdate: "cascade",
+    }),
+  type: text("type").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull(),
+  balanceAfter: numeric("balance_after", {
+    precision: 10,
+    scale: 2,
+    mode: "number",
+  }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+});
+
+export const youtubeSubscriptionMembers = pgTable(
+  "youtube_subscription_members",
+  {
+    id: text("id").primaryKey(),
+    ...timestamps,
+  },
+);
+
+export const youtubeSubscriptionMonths = pgTable(
+  "youtube_subscription_months",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    shortcode: text("shortcode").notNull(),
+    month: date("month", { mode: "string" }).notNull(),
+    paid: boolean("paid").notNull().default(false),
+    ...timestamps,
+  },
+  (table) => [unique("youtube_subscription_months_shortcode_month").on(table.shortcode, table.month)],
+);
+
+export const youtubeFeeSchedules = pgTable("youtube_fee_schedules", {
+  id: serial("id").primaryKey(),
+  fee: numeric("fee", { precision: 10, scale: 2, mode: "number" }).notNull(),
+  effectiveFrom: date("effective_from", { mode: "string" }).notNull(),
+  effectiveTo: date("effective_to", { mode: "string" }),
+  ...timestamps,
+});
+
+export const appConfig = pgTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  ...timestamps,
+});
+
+export const dailyFitnessLogs = pgTable("daily_fitness_logs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  logDate: date("log_date", { mode: "string" }).notNull().unique(),
+  weightKg: numeric("weight_kg", { precision: 5, scale: 2, mode: "number" }).notNull(),
+  gymStatus: text("gym_status").notNull(),
+  gymSession: text("gym_session"),
+  gymMinutes: integer("gym_minutes"),
+  ...timestamps,
+});
+
+export const fitnessLogSessions = pgTable("fitness_log_sessions", {
+  telegramUserId: bigint("telegram_user_id", { mode: "number" }).primaryKey(),
+  step: text("step").notNull(),
+  weightKg: numeric("weight_kg", { precision: 5, scale: 2, mode: "number" }),
+  gymSession: text("gym_session"),
+  targetLogDate: date("target_log_date", { mode: "string" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+  ...timestamps,
+});
+
+export const telegramUsersRelations = relations(telegramUsers, ({ one }) => ({
+  debtRecord: one(debtRecords, {
+    fields: [telegramUsers.shortcode],
+    references: [debtRecords.shortcode],
+  }),
+}));
+
+export const debtRecordsRelations = relations(debtRecords, ({ many, one }) => ({
+  items: many(debtItems),
+  user: one(telegramUsers, {
+    fields: [debtRecords.shortcode],
+    references: [telegramUsers.shortcode],
+  }),
+}));
+
+export const debtItemsRelations = relations(debtItems, ({ one }) => ({
+  record: one(debtRecords, {
+    fields: [debtItems.debtRecordId],
+    references: [debtRecords.id],
+  }),
+}));

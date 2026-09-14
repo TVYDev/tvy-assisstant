@@ -1,13 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockFrom } = vi.hoisted(() => ({
-  mockFrom: vi.fn(),
+const {
+  mockFindLog,
+  mockFindSession,
+  mockInsert,
+  mockUpdate,
+  mockDelete,
+} = vi.hoisted(() => ({
+  mockFindLog: vi.fn(),
+  mockFindSession: vi.fn(),
+  mockInsert: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockDelete: vi.fn(),
 }));
 
-vi.mock("../supabase", () => ({
-  supabase: {
-    from: mockFrom,
-  },
+vi.mock("../db", () => ({
+  getDb: () => ({
+    insert: mockInsert,
+    update: mockUpdate,
+    delete: mockDelete,
+    query: {
+      dailyFitnessLogs: { findFirst: mockFindLog },
+      fitnessLogSessions: { findFirst: mockFindSession },
+    },
+  }),
+}));
+
+vi.mock("../youtube-subscription", () => ({
+  getConfig: vi.fn(),
+  setConfig: vi.fn(),
 }));
 
 import {
@@ -59,25 +80,36 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function makeChain(overrides: Record<string, unknown> = {}) {
-  const base: Record<string, unknown> = {
-    data: null,
-    error: null,
-    ...overrides,
+function insertLogChain(row: Record<string, unknown>) {
+  return {
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([row]),
+      }),
+    }),
   };
-  const q: Record<string, unknown> = {};
-  q.select = vi.fn().mockReturnValue(q);
-  q.eq = vi.fn().mockReturnValue(q);
-  q.gte = vi.fn().mockReturnValue(q);
-  q.order = vi.fn().mockReturnValue(q);
-  q.upsert = vi.fn().mockReturnValue(q);
-  q.update = vi.fn().mockReturnValue(q);
-  q.delete = vi.fn().mockReturnValue(q);
-  q.single = vi.fn().mockResolvedValue(base);
-  q.maybeSingle = vi.fn().mockResolvedValue(base);
-  q.then = (resolve: (v: unknown) => unknown) =>
-    Promise.resolve(base).then(resolve);
-  return q;
+}
+
+function insertSessionChain() {
+  return {
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
+}
+
+function updateChain() {
+  return {
+    set: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
+}
+
+function deleteChain() {
+  return {
+    where: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe("validation helpers", () => {
@@ -239,23 +271,18 @@ describe("splitFitCommandArgs", () => {
 
 describe("submitQuickLog", () => {
   it("saves a quick rest-day log", async () => {
-    const existingChain = makeChain({ data: null, error: null });
-    const upsertChain = makeChain({
-      data: {
-        log_date: "2026-06-14",
-        weight_kg: 75.5,
-        gym_status: "rest",
-        gym_session: null,
-        gym_minutes: null,
-      },
-      error: null,
-    });
-    const deleteChain = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(existingChain)
-      .mockReturnValueOnce(upsertChain)
-      .mockReturnValueOnce(deleteChain);
+    mockFindLog.mockResolvedValue(undefined);
+    mockInsert.mockReturnValue(
+      insertLogChain({
+        id: 1,
+        logDate: "2026-06-14",
+        weightKg: 75.5,
+        gymStatus: "rest",
+        gymSession: null,
+        gymMinutes: null,
+      }),
+    );
+    mockDelete.mockReturnValue(deleteChain());
 
     const result = await submitQuickLog(12345, "75.5 rest");
 
@@ -308,18 +335,17 @@ describe("todayInPhnomPenh", () => {
 
 describe("startSession", () => {
   it("creates a weight step session", async () => {
-    const chain = makeChain();
-    mockFrom.mockReturnValue(chain);
+    const chain = insertSessionChain();
+    mockInsert.mockReturnValue(chain);
 
     const result = await startSession(12345);
 
-    expect(mockFrom).toHaveBeenCalledWith("fitness_log_sessions");
-    expect(chain.upsert).toHaveBeenCalledWith(
+    expect(mockInsert).toHaveBeenCalled();
+    expect(chain.values).toHaveBeenCalledWith(
       expect.objectContaining({
-        telegram_user_id: 12345,
+        telegramUserId: 12345,
         step: "weight",
       }),
-      { onConflict: "telegram_user_id" },
     );
     expect(result.reply).toContain("weight");
   });
@@ -327,88 +353,73 @@ describe("startSession", () => {
 
 describe("getSession", () => {
   it("returns null when no session exists", async () => {
-    mockFrom.mockReturnValue(makeChain({ data: null, error: null }));
+    mockFindSession.mockResolvedValue(undefined);
 
     const session = await getSession(12345);
     expect(session).toBeNull();
   });
 
   it("deletes expired sessions", async () => {
-    const deleteChain = makeChain();
-    const selectChain = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "weight",
-        expires_at: new Date(Date.now() - 1000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "weight",
+      weightKg: null,
+      gymSession: null,
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
     });
-
-    mockFrom
-      .mockReturnValueOnce(selectChain)
-      .mockReturnValueOnce(deleteChain);
+    mockDelete.mockReturnValue(deleteChain());
 
     const session = await getSession(12345);
     expect(session).toBeNull();
-    expect(deleteChain.delete).toHaveBeenCalled();
+    expect(mockDelete).toHaveBeenCalled();
   });
 });
 
 describe("advanceSession", () => {
   it("prompts for gym after valid weight", async () => {
-    const sessionChain = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "weight",
-        weight_kg: null,
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "weight",
+      weightKg: null,
+      gymSession: null,
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const updateChain = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(sessionChain)
-      .mockReturnValueOnce(updateChain);
+    const chain = updateChain();
+    mockUpdate.mockReturnValue(chain);
 
     const result = await advanceSession(12345, "75.5");
 
     expect(result.done).toBe(false);
     expect(result.reply).toContain("gym yesterday");
     expect(result.keyboard).toEqual(buildGymKeyboard());
-    expect(updateChain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ step: "gym", weight_kg: 75.5 }),
+    expect(chain.set).toHaveBeenCalledWith(
+      expect.objectContaining({ step: "gym", weightKg: 75.5 }),
     );
   });
 
   it("saves rest day after gym=rest", async () => {
-    const sessionChain = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "gym",
-        weight_kg: 75.5,
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "gym",
+      weightKg: 75.5,
+      gymSession: null,
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const existingChain = makeChain({ data: null, error: null });
-    const upsertChain = makeChain({
-      data: {
-        log_date: "2026-06-14",
-        weight_kg: 75.5,
-        gym_status: "rest",
-        gym_session: null,
-        gym_minutes: null,
-      },
-      error: null,
-    });
-    const deleteChain = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(sessionChain)
-      .mockReturnValueOnce(existingChain)
-      .mockReturnValueOnce(upsertChain)
-      .mockReturnValueOnce(deleteChain);
+    mockFindLog.mockResolvedValue(undefined);
+    mockInsert.mockReturnValue(
+      insertLogChain({
+        id: 1,
+        logDate: "2026-06-14",
+        weightKg: 75.5,
+        gymStatus: "rest",
+        gymSession: null,
+        gymMinutes: null,
+      }),
+    );
+    mockDelete.mockReturnValue(deleteChain());
 
     const result = await advanceSession(12345, "rest");
 
@@ -418,76 +429,55 @@ describe("advanceSession", () => {
   });
 
   it("walks through gym day flow", async () => {
-    const sessionAtGym = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "gym",
-        weight_kg: 75.5,
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "gym",
+      weightKg: 75.5,
+      gymSession: null,
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const updateToSession = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(sessionAtGym)
-      .mockReturnValueOnce(updateToSession);
+    mockUpdate.mockReturnValue(updateChain());
 
     const yesResult = await advanceSession(12345, "yes");
     expect(yesResult.done).toBe(false);
     expect(yesResult.reply).toContain("Tap a button");
     expect(yesResult.keyboard).toEqual(buildSessionKeyboard());
 
-    const sessionAtSession = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "session",
-        weight_kg: 75.5,
-        gym_status: "gym",
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "session",
+      weightKg: 75.5,
+      gymSession: null,
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const updateToMinutes = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(sessionAtSession)
-      .mockReturnValueOnce(updateToMinutes);
 
     const sessionResult = await advanceSession(12345, "chest");
     expect(sessionResult.done).toBe(false);
     expect(sessionResult.reply).toContain("minutes");
     expect(sessionResult.keyboard).toEqual(buildMinutesKeyboard());
 
-    const sessionAtMinutes = makeChain({
-      data: {
-        telegram_user_id: 12345,
-        step: "minutes",
-        weight_kg: 75.5,
-        gym_status: "gym",
-        gym_session: "chest",
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      },
-      error: null,
+    mockFindSession.mockResolvedValue({
+      telegramUserId: 12345,
+      step: "minutes",
+      weightKg: 75.5,
+      gymSession: "chest",
+      targetLogDate: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const existingChain = makeChain({ data: null, error: null });
-    const upsertChain = makeChain({
-      data: {
-        log_date: "2026-06-14",
-        weight_kg: 75.5,
-        gym_status: "gym",
-        gym_session: "chest",
-        gym_minutes: 45,
-      },
-      error: null,
-    });
-    const deleteChain = makeChain();
-
-    mockFrom
-      .mockReturnValueOnce(sessionAtMinutes)
-      .mockReturnValueOnce(existingChain)
-      .mockReturnValueOnce(upsertChain)
-      .mockReturnValueOnce(deleteChain);
+    mockFindLog.mockResolvedValue(undefined);
+    mockInsert.mockReturnValue(
+      insertLogChain({
+        id: 1,
+        logDate: "2026-06-14",
+        weightKg: 75.5,
+        gymStatus: "gym",
+        gymSession: "chest",
+        gymMinutes: 45,
+      }),
+    );
+    mockDelete.mockReturnValue(deleteChain());
 
     const doneResult = await advanceSession(12345, "45");
     expect(doneResult.done).toBe(true);
@@ -497,13 +487,13 @@ describe("advanceSession", () => {
 
 describe("cancelSession", () => {
   it("deletes the session row", async () => {
-    const chain = makeChain();
-    mockFrom.mockReturnValue(chain);
+    const chain = deleteChain();
+    mockDelete.mockReturnValue(chain);
 
     await cancelSession(12345);
 
-    expect(chain.delete).toHaveBeenCalled();
-    expect(chain.eq).toHaveBeenCalledWith("telegram_user_id", 12345);
+    expect(mockDelete).toHaveBeenCalled();
+    expect(chain.where).toHaveBeenCalled();
   });
 });
 
