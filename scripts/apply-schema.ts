@@ -5,10 +5,13 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is not set.");
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set.`);
+  return value;
 }
+
+const databaseUrl = requiredEnv("DATABASE_URL");
 
 function splitSql(sqlText: string): string[] {
   const statements: string[] = [];

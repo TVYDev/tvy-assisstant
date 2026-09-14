@@ -8,16 +8,15 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const databaseUrl = process.env.DATABASE_URL;
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set.`);
+  return value;
+}
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the copy.");
-}
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is not set.");
-}
+const supabaseUrl = requiredEnv("SUPABASE_URL");
+const supabaseKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+const databaseUrl = requiredEnv("DATABASE_URL");
 
 const TABLES = {
   telegram_users: [
@@ -101,7 +100,7 @@ async function fetchTable(table: string): Promise<Record<string, unknown>[]> {
       `${supabaseUrl}/rest/v1/${table}?select=*&offset=${from}&limit=${pageSize}`,
       {
         headers: {
-          apikey: supabaseKey!,
+          apikey: supabaseKey,
           Authorization: `Bearer ${supabaseKey}`,
           Prefer: "count=exact",
         },

@@ -7,16 +7,15 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const databaseUrl = process.env.DATABASE_URL;
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set.`);
+  return value;
+}
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
-}
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is not set.");
-}
+const supabaseUrl = requiredEnv("SUPABASE_URL");
+const supabaseKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+const databaseUrl = requiredEnv("DATABASE_URL");
 
 const TABLES = [
   "telegram_users",
@@ -35,8 +34,8 @@ const TABLES = [
 async function supabaseCount(table: string): Promise<number> {
   const response = await fetch(`${supabaseUrl}/rest/v1/${table}?select=*`, {
     headers: {
-      apikey: supabaseKey!,
-      Authorization: `Bearer ${supabaseKey}`,
+      apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
       Prefer: "count=exact",
       Range: "0-0",
     },
