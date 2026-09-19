@@ -72,7 +72,7 @@ export const OWNER_MENU_CRONS_TEXT =
   "📺 <b>YouTube reminder</b> — 1st of month, 08:00 (UTC+7)\n" +
   "🌅 <b>Fitness reminder</b> — daily 07:50 (UTC+7)\n" +
   "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
-  "⏰ <b>Due reminders</b> — every minute\n\n" +
+  "⏰ <b>Due reminders</b> — daily 09:00 (UTC+7)\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
 export const OWNER_MENU_HELP_TEXT =
