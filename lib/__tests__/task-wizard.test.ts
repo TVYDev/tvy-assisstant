@@ -174,6 +174,31 @@ describe("todo wizard", () => {
     const dueAt = mockAddTodo.mock.calls[0][0].dueAt as Date;
     expect(dueAt.toISOString()).toBe("2026-09-20T08:30:00.000Z");
   });
+
+  it("keeps Today plus a past clock instead of rolling to tomorrow", async () => {
+    mockFindSession.mockResolvedValue(
+      sessionRow({
+        step: "time",
+        payload: JSON.stringify({
+          list_slug: "inbox",
+          title: "Gym",
+          due_date: "2026-09-19",
+        }),
+      }),
+    );
+    mockAddTodo.mockResolvedValue({
+      id: 11,
+      list_slug: "inbox",
+      title: "Gym",
+    });
+
+    const result = await advanceTaskWizard(OWNER, "clock:0900", CONTEXT, NOW);
+    const dueAt = mockAddTodo.mock.calls[0][0].dueAt as Date;
+    expect(dueAt.toISOString()).toBe("2026-09-19T02:00:00.000Z");
+    expect(result.reply).toContain("today 09:00");
+    expect(result.reply).not.toContain("tomorrow");
+    expect(result.reply).toContain("already passed");
+  });
 });
 
 describe("reminder wizard", () => {

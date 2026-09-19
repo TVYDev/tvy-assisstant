@@ -3,7 +3,6 @@ import { getDb } from "./db";
 import { taskWizardSessions } from "./db/schema";
 import { cancelSession } from "./fitness-log";
 import {
-  addDaysToDateString,
   combineDateAndClock,
   formatLocalDateTime,
   normalizeListSlug,
@@ -496,8 +495,8 @@ async function handleTimeStep(
     context,
     resolved.at,
     now,
-    resolved.rolled
-      ? `That time already passed, so I set ${formatLocalDateTime(resolved.at, now)}.\n\n`
+    resolved.past
+      ? `That time already passed, so I kept it due ${formatLocalDateTime(resolved.at, now)}.\n\n`
       : "",
   );
 }
@@ -608,8 +607,8 @@ async function handleReminderTimeStep(
     due_clock: clock,
   });
 
-  const prefix = resolved.rolled
-    ? `That time already passed, so I set ${formatLocalDateTime(resolved.at, now)}.\n\n`
+  const prefix = resolved.past
+    ? `That time already passed, so I kept it due ${formatLocalDateTime(resolved.at, now)}.\n\n`
     : "";
   return {
     reply: `${prefix}Repeat?`,
@@ -723,24 +722,16 @@ function resolveDueDateTime(
   clock: string,
   now: Date,
 ):
-  | { ok: true; at: Date; dateStr: string; rolled: boolean }
+  | { ok: true; at: Date; dateStr: string; past: boolean }
   | { ok: false; error: string } {
   if (!dateStr) {
     return { ok: false, error: "Pick a time chip or type HH:mm." };
   }
-  let at = combineDateAndClock(dateStr, clock);
+  const at = combineDateAndClock(dateStr, clock);
   if (!at) {
     return { ok: false, error: "That time isn't valid. Try 09:00." };
   }
-  if (at.getTime() > now.getTime()) {
-    return { ok: true, at, dateStr, rolled: false };
-  }
-  const rolled = addDaysToDateString(dateStr, 1);
-  at = combineDateAndClock(rolled, clock);
-  if (!at) {
-    return { ok: false, error: "Could not roll that time forward." };
-  }
-  return { ok: true, at, dateStr: rolled, rolled: true };
+  return { ok: true, at, dateStr, past: at.getTime() <= now.getTime() };
 }
 
 function parseWizardClock(input: string): string | null {
