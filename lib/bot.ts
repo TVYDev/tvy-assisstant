@@ -89,6 +89,9 @@ import {
   OWNER_MENU_HELP_TEXT,
   OWNER_MENU_FIT_TEXT,
   OWNER_MENU_CRONS_TEXT,
+  OWNER_HELP_TEXT,
+  PUBLIC_HELP_TEXT,
+  splitTelegramText,
   ownerFitMenuKeyboard,
   ownerCronsMenuKeyboard,
   ownerTodosMenuKeyboard,
@@ -1996,147 +1999,10 @@ bot.on("callback_query:data", async (ctx, next) => {
 
 bot.command("help", async (ctx) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
-    return ctx.reply(
-      "👋 Here's what Dino can do for you:\n" +
-        "\n" +
-        "👤 Public commands:\n" +
-        "  /owe — check your balance with Vannyou\n" +
-        "  /qr — get KHQR code to pay Vannyou\n" +
-        "  /about — learn about Dino (aka Nailong) & current version\n" +
-        "  /help — show this help message",
-    );
+    return ctx.reply(PUBLIC_HELP_TEXT);
   }
 
-  return ctx.reply(
-    "📖 All commands:\n" +
-      "\n" +
-      "🦕 Tip: type /menu for the button panel\n" +
-      "\n" +
-      "👤 Public:\n" +
-      "  /owe — check your balance\n" +
-      "  /qr — get KHQR payment QR code\n" +
-      "  /about — about Dino (aka Nailong) & version\n" +
-      "  /help — show this help message\n" +
-      "\n" +
-      "💸 Debt management:\n" +
-      "  /adddebt <shortcode> <amount> <desc>\n" +
-      "    → Add a debt item for someone\n" +
-      "    → e.g. /adddebt BSR 15.50 Lunch\n" +
-      "  /adddeposit <shortcode> <amount>\n" +
-      "    → Add to someone's deposit balance\n" +
-      "    → e.g. /adddeposit BSR 20\n" +
-      "  /reducedeposit <shortcode> <amount> [note]\n" +
-      "    → Reduce deposit balance (logged in history)\n" +
-      "    → e.g. /reducedeposit BSR 15 Applied to lunch\n" +
-      "  /deposits <shortcode>\n" +
-      "    → View current balance + add/reduce history\n" +
-      "    → e.g. /deposits BSR\n" +
-      "  /updatedebt <item_id> <amount> <desc>\n" +
-      "    → Correct an existing debt item\n" +
-      "    → e.g. /updatedebt 12 20.00 Dinner\n" +
-      "  /debts <shortcode>\n" +
-      "    → View unpaid debts + YouTube for someone\n" +
-      "  /allowe\n" +
-      "    → Summary of everyone who owes\n" +
-      "  /paid <shortcode> [amount|deposit]\n" +
-      "    → Clear ALL debts + YouTube\n" +
-      "    → no extra args: deposit unchanged\n" +
-      "    → amount: record cash received, then settle\n" +
-      "    → deposit: settle from deposit only\n" +
-      "  /canceldebt <item_id>\n" +
-      "    → Remove a specific debt item\n" +
-      "  /debtpaid <item_id> [amount|deposit]\n" +
-      "    → Mark debt paid; optional amount or deposit\n" +
-      "    → e.g. /debtpaid 5 25 or /debtpaid 5 deposit\n" +
-      "  /debtunpaid <item_id>\n" +
-      "    → Mark a debt item as unpaid\n" +
-      "\n" +
-      "📺 YouTube subscription:\n" +
-      "  /ytpaid <shortcode> <YYYY-MM> [...] [amount|deposit]\n" +
-      "    → Mark month(s) paid; optional amount or deposit\n" +
-      "    → e.g. /ytpaid BSR 2026-04 1.19\n" +
-      "    → e.g. /ytpaid BSR 2026-04 deposit\n" +
-      "  /ytunpaid <shortcode> <YYYY-MM> [YYYY-MM ...]\n" +
-      "    → Mark one or more months as unpaid (1 group notification)\n" +
-      "  /ytpaidall <shortcode> [amount|deposit]\n" +
-      "    → Mark ALL months paid; optional amount or deposit\n" +
-      "  /ytunpaidall <shortcode>\n" +
-      "    → Mark ALL months as unpaid (1 group notification)\n" +
-      "  /ytfees\n" +
-      "    → List YouTube fee schedules (effective / expiry dates)\n" +
-      "  /addytfee <amount> <from YYYY-MM-DD> [to YYYY-MM-DD]\n" +
-      "    → Add a fee period by date; auto-closes prior open-ended schedule\n" +
-      "  /previewytreminder\n" +
-      "    → Preview monthly YouTube reminder (QR + list) in this chat\n" +
-      "  /previewowe <shortcode>\n" +
-      "    → Preview /owe message for a user by shortcode\n" +
-      "  /stickerid\n" +
-      "    → Sticker file_id lookup (owner DM only)\n" +
-      "  /menu\n" +
-      "    → Admin button menu (owner only)\n" +
-      "    → Stickers section configures follow-ups for /start, /owe, /qr, /about\n" +
-      "\n" +
-      "👥 User management:\n" +
-      "  /listusers\n" +
-      "    → List all telegram users in DB\n" +
-      "  /updateuser <shortcode> <field> <value>\n" +
-      "    → first_name | last_name | shortcode | telegram_username | telegram_user_id\n" +
-      "    → telegram_user_id: numeric Telegram id, or null/none/clear to unlink\n" +
-      "    → e.g. /updateuser BSR first_name Sophia\n" +
-      "    → e.g. /updateuser BSR telegram_username johndoe\n" +
-      "    → e.g. /updateuser BSR telegram_user_id 123456789\n" +
-      "    → Shortcode change cascades all records\n" +
-      "\n" +
-      "🏋️ Fitness logging:\n" +
-      "  /fit\n" +
-      "    → Guided morning log for today\n" +
-      "  /fit YYYY-MM-DD\n" +
-      "    → Guided backdate for a missed morning\n" +
-      "  /fit <weight> rest\n" +
-      "    → Quick rest-day log, e.g. /fit 75.5 rest\n" +
-      "  /fit <weight> skip\n" +
-      "    → Quick skip log, e.g. /fit 75.5 skip\n" +
-      "  /fit <weight> yes <session> <minutes>\n" +
-      "    → Quick gym log, e.g. /fit 75.5 yes chest 45\n" +
-      "  /fit YYYY-MM-DD <weight> ...\n" +
-      "    → Quick backdate, e.g. /fit 2026-06-12 75.5 rest\n" +
-      "  /cancelfit\n" +
-      "    → Cancel an in-progress log session\n" +
-      "  /fithistory [weeks]\n" +
-      "    → Gym dot grid (default 12 weeks) + recent logs (last 7 days)\n" +
-      "  /gymreminder [on|off]\n" +
-      "    → Weekday 4:45 PM gym motivation DM (default on)\n" +
-      "\n" +
-      "📋 Todos & reminders:\n" +
-      "  /addtodo\n" +
-      "    → Button wizard to add a todo\n" +
-      "  /addtodo Buy milk\n" +
-      "    → Add to inbox\n" +
-      "  /addtodo #shopping Buy milk @ tomorrow 09:00\n" +
-      "    → Add to a list with a due reminder\n" +
-      "  /todos\n" +
-      "    → Open todos, grouped by list\n" +
-      "  /todos all\n" +
-      "    → Open and done, grouped by list\n" +
-      "  /todos today\n" +
-      "    → Due today + overdue (done today at the bottom)\n" +
-      "  /todos shopping\n" +
-      "    → Open items in one list\n" +
-      "  /todosearch milk\n" +
-      "    → Find todos whose title contains a word (open and done)\n" +
-      "  /addlist shopping\n" +
-      "    → Create a list\n" +
-      "  /todolists\n" +
-      "    → List names + open counts\n" +
-      "  /tododone <id> /todoundone <id> /canceltodo <id>\n" +
-      "  /todomove <id> shopping\n" +
-      "  /remind\n" +
-      "    → Button wizard to add a reminder\n" +
-      "  /remind tomorrow 15:00 Call dentist\n" +
-      "  /remind 08:00 Gym daily\n" +
-      "  /reminders\n" +
-      "  /cancelremind <id>\n" +
-      "  /canceltask\n" +
-      "    → Cancel the add wizard",
-  );
+  for (const chunk of splitTelegramText(OWNER_HELP_TEXT)) {
+    await ctx.reply(chunk);
+  }
 });
