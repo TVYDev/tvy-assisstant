@@ -31,6 +31,12 @@ vi.mock("../youtube-subscription", () => ({
   setConfig: vi.fn(),
 }));
 
+const mockCancelTaskWizard = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock("../task-wizard", () => ({
+  cancelTaskWizard: mockCancelTaskWizard,
+}));
+
 import {
   parseWeightKg,
   parseYesNo,
@@ -348,6 +354,7 @@ describe("startSession", () => {
       }),
     );
     expect(result.reply).toContain("weight");
+    expect(mockCancelTaskWizard).toHaveBeenCalledWith(12345);
   });
 });
 

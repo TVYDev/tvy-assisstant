@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { neon } from "@neondatabase/serverless";
 import { config } from "dotenv";
@@ -40,15 +40,29 @@ function splitSql(sqlText: string): string[] {
 }
 
 async function main() {
-  const sqlFile = resolve(process.cwd(), "drizzle/0000_baseline.sql");
-  const statements = splitSql(readFileSync(sqlFile, "utf8"));
-  const query = neon(databaseUrl);
+  const drizzleDir = resolve(process.cwd(), "drizzle");
+  const sqlFiles = readdirSync(drizzleDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
 
-  for (const statement of statements) {
-    await query.query(statement);
+  if (sqlFiles.length === 0) {
+    throw new Error("No SQL files found in drizzle/");
   }
 
-  console.log(`Applied ${statements.length} statements from drizzle/0000_baseline.sql`);
+  const query = neon(databaseUrl);
+  let totalStatements = 0;
+
+  for (const fileName of sqlFiles) {
+    const sqlFile = resolve(drizzleDir, fileName);
+    const statements = splitSql(readFileSync(sqlFile, "utf8"));
+    for (const statement of statements) {
+      await query.query(statement);
+    }
+    totalStatements += statements.length;
+    console.log(`Applied ${statements.length} statements from drizzle/${fileName}`);
+  }
+
+  console.log(`Applied ${totalStatements} statements from ${sqlFiles.length} SQL file(s)`);
 }
 
 main().catch((error) => {

@@ -91,13 +91,50 @@ import {
   OWNER_MENU_CRONS_TEXT,
   ownerFitMenuKeyboard,
   ownerCronsMenuKeyboard,
+  ownerTodosMenuKeyboard,
+  OWNER_MENU_TODOS_TEXT,
 } from "./owner-menu";
 import {
   formatCronJobReply,
   runFitnessReminderCron,
   runGymMotivationCron,
+  runReminderCron,
   runYoutubeReminderCron,
 } from "./cron-jobs";
+import {
+  addTodo,
+  cancelTodo,
+  createList,
+  deleteList,
+  formatTodoLists,
+  formatTodosReply,
+  getTodos,
+  listTodoLists,
+  moveTodo,
+  parseAddTodoCommand,
+  parseTodoListFilter,
+  setTodoDone,
+} from "./todos";
+import {
+  addReminder,
+  cancelReminder,
+  formatRemindersList,
+  listPendingReminders,
+  parseRemindCommand,
+  parseTodoDoneCallback,
+  REMINDER_DONE_CALLBACK_PREFIX,
+  resolveTargetChatId,
+} from "./reminders";
+import {
+  advanceTaskWizard,
+  cancelTaskWizard,
+  getTaskWizardSession,
+  parseTaskWizardCallback,
+  startTaskWizard,
+  taskListFooterKeyboard,
+  type AdvanceTaskWizardResult,
+  type TaskWizardKeyboard,
+} from "./task-wizard";
 import {
   parseShortcodeFromMatch,
   promptShortcodePick,
@@ -320,6 +357,47 @@ async function replyFitnessLogResult(
   result: AdvanceSessionResult,
 ) {
   await ctx.reply(result.reply, fitnessLogReplyOptions(result));
+}
+
+function taskWizardReplyOptions(result: AdvanceTaskWizardResult) {
+  if (!result.keyboard) return undefined;
+  return { reply_markup: { inline_keyboard: result.keyboard } };
+}
+
+async function replyTaskWizardResult(
+  ctx: {
+    reply: (
+      text: string,
+      options?: { reply_markup?: { inline_keyboard: TaskWizardKeyboard } },
+    ) => Promise<unknown>;
+  },
+  result: AdvanceTaskWizardResult,
+) {
+  await ctx.reply(result.reply, taskWizardReplyOptions(result));
+}
+
+async function replyWithTaskFooter(
+  ctx: {
+    reply: (
+      text: string,
+      options?: { reply_markup?: { inline_keyboard: TaskWizardKeyboard } },
+    ) => Promise<unknown>;
+  },
+  text: string,
+) {
+  await ctx.reply(text, {
+    reply_markup: { inline_keyboard: taskListFooterKeyboard() },
+  });
+}
+
+function taskWizardContext(ctx: {
+  from?: { id: number };
+  chat?: { id: number };
+}) {
+  return {
+    ownerId: OWNER_ID,
+    chatId: ctx.chat?.id ?? OWNER_ID,
+  };
 }
 
 function pick<T>(arr: T[]): T {
@@ -1220,6 +1298,11 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     case "om:fit":
       await editSection(OWNER_MENU_FIT_TEXT, ownerFitMenuKeyboard());
       break;
+    case "om:todo": {
+      const lists = await listTodoLists();
+      await editSection(OWNER_MENU_TODOS_TEXT, ownerTodosMenuKeyboard(lists));
+      break;
+    }
     case "om:cron":
       await editSection(OWNER_MENU_CRONS_TEXT, ownerCronsMenuKeyboard());
       break;
@@ -1310,6 +1393,60 @@ bot.callbackQuery(/^om:/, async (ctx) => {
         });
       } catch (err) {
         await ctx.reply(`❌ Gym motivation failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:cron:reminders": {
+      try {
+        const result = await runReminderCron();
+        await ctx.reply(formatCronJobReply("Due reminders", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ Due reminders failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:todo": {
+      const result = await startTaskWizard(ctx.from!.id, "todo");
+      await replyTaskWizardResult(ctx, result);
+      break;
+    }
+    case "om:run:remind": {
+      const result = await startTaskWizard(ctx.from!.id, "reminder");
+      await replyTaskWizardResult(ctx, result);
+      break;
+    }
+    case "om:run:todos": {
+      const listed = await getTodos("all");
+      await replyWithTaskFooter(ctx, formatTodosReply("all", listed));
+      break;
+    }
+    case "om:run:todos:today": {
+      const listed = await getTodos("today");
+      await replyWithTaskFooter(ctx, formatTodosReply("today", listed));
+      break;
+    }
+    case "om:run:reminders": {
+      await replyWithTaskFooter(ctx, formatRemindersList(await listPendingReminders()));
+      break;
+    }
+    case "om:run:canceltask": {
+      const session = await getTaskWizardSession(ctx.from!.id);
+      if (!session) {
+        await ctx.reply("No add wizard to cancel.");
+        break;
+      }
+      await cancelTaskWizard(ctx.from!.id);
+      await ctx.reply("Add wizard cancelled.");
+      break;
+    }
+    default: {
+      if (data.startsWith("om:run:todos:list:")) {
+        const slug = data.slice("om:run:todos:list:".length);
+        const filter = parseTodoListFilter(slug);
+        const listed = await getTodos(filter);
+        await replyWithTaskFooter(ctx, formatTodosReply(filter, listed));
       }
       break;
     }
@@ -1575,6 +1712,170 @@ bot.command("gymreminder", async (ctx) => {
   );
 });
 
+bot.command("addlist", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const slug = ctx.match?.trim() ?? "";
+  if (!slug) {
+    return ctx.reply("Usage: /addlist shopping");
+  }
+  try {
+    const list = await createList(slug);
+    return ctx.reply(`✅ List #${list.slug} created.`);
+  } catch (err) {
+    return ctx.reply(`❌ ${(err as Error).message}`);
+  }
+});
+
+bot.command("todolists", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return replyWithTaskFooter(ctx, formatTodoLists(await listTodoLists()));
+});
+
+bot.command("cancellist", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const slug = ctx.match?.trim() ?? "";
+  if (!slug) {
+    return ctx.reply("Usage: /cancellist shopping");
+  }
+  try {
+    const list = await deleteList(slug);
+    return ctx.reply(`🗑️ Deleted empty list #${list.slug}.`);
+  } catch (err) {
+    return ctx.reply(`❌ ${(err as Error).message}`);
+  }
+});
+
+bot.command("addtodo", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const args = ctx.match?.trim() ?? "";
+  if (!args) {
+    return replyTaskWizardResult(ctx, await startTaskWizard(ctx.from!.id, "todo"));
+  }
+
+  const parsed = parseAddTodoCommand(args);
+  if (!parsed.ok) {
+    return ctx.reply(parsed.error);
+  }
+
+  const todo = await addTodo({
+    title: parsed.value.title,
+    listSlug: parsed.value.listSlug,
+    dueAt: parsed.value.dueAt,
+    remindChatId: OWNER_ID,
+  });
+  const due = todo.due_at
+    ? `\nDue reminder set.`
+    : "";
+  return ctx.reply(`✅ Added #${todo.id} to #${todo.list_slug}: ${todo.title}${due}`);
+});
+
+bot.command("todos", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const filter = parseTodoListFilter(ctx.match);
+  const listed = await getTodos(filter);
+  return replyWithTaskFooter(ctx, formatTodosReply(filter, listed));
+});
+
+bot.command("tododone", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const id = parseInt(ctx.match?.trim() ?? "", 10);
+  if (Number.isNaN(id)) return ctx.reply("Usage: /tododone <id>");
+  const todo = await setTodoDone(id, true);
+  if (!todo) return ctx.reply(`No todo #${id}.`);
+  return ctx.reply(`✅ #${todo.id} done.`);
+});
+
+bot.command("todoundone", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const id = parseInt(ctx.match?.trim() ?? "", 10);
+  if (Number.isNaN(id)) return ctx.reply("Usage: /todoundone <id>");
+  const todo = await setTodoDone(id, false);
+  if (!todo) return ctx.reply(`No todo #${id}.`);
+  return ctx.reply(`⏳ #${todo.id} is open again.`);
+});
+
+bot.command("canceltodo", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const id = parseInt(ctx.match?.trim() ?? "", 10);
+  if (Number.isNaN(id)) return ctx.reply("Usage: /canceltodo <id>");
+  const todo = await cancelTodo(id);
+  if (!todo) return ctx.reply(`No todo #${id}.`);
+  return ctx.reply(`🗑️ Deleted #${todo.id} ${todo.title}.`);
+});
+
+bot.command("todomove", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const parts = (ctx.match?.trim() ?? "").split(/\s+/).filter(Boolean);
+  if (parts.length < 2) {
+    return ctx.reply("Usage: /todomove <id> shopping");
+  }
+  const id = parseInt(parts[0], 10);
+  if (Number.isNaN(id)) return ctx.reply("Usage: /todomove <id> shopping");
+  const todo = await moveTodo(id, parts[1]);
+  if (!todo) return ctx.reply(`No todo #${id}.`);
+  return ctx.reply(`📦 Moved #${todo.id} to #${todo.list_slug}.`);
+});
+
+bot.command("remind", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const args = ctx.match?.trim() ?? "";
+  if (!args) {
+    return replyTaskWizardResult(
+      ctx,
+      await startTaskWizard(ctx.from!.id, "reminder"),
+    );
+  }
+
+  const parsed = parseRemindCommand(args);
+  if (!parsed.ok) {
+    return ctx.reply(parsed.error);
+  }
+
+  const target = await resolveTargetChatId({
+    token: parsed.value.targetToken,
+    ownerId: OWNER_ID,
+    currentChatId: ctx.chat?.id ?? OWNER_ID,
+  });
+  if (!target.ok) {
+    return ctx.reply(`❌ ${target.error}`);
+  }
+
+  const reminder = await addReminder({
+    title: parsed.value.title,
+    remindAt: parsed.value.at,
+    recurrence: parsed.value.recurrence,
+    targetChatId: target.chatId,
+  });
+  return ctx.reply(
+    `✅ Reminder #${reminder.id}: ${reminder.title}` +
+      (reminder.recurrence ? ` · ${reminder.recurrence}` : ""),
+  );
+});
+
+bot.command("reminders", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  return replyWithTaskFooter(ctx, formatRemindersList(await listPendingReminders()));
+});
+
+bot.command("cancelremind", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const id = parseInt(ctx.match?.trim() ?? "", 10);
+  if (Number.isNaN(id)) return ctx.reply("Usage: /cancelremind <id>");
+  const reminder = await cancelReminder(id);
+  if (!reminder) return ctx.reply(`No pending reminder #${id}.`);
+  return ctx.reply(`🗑️ Cancelled reminder #${reminder.id}.`);
+});
+
+bot.command("canceltask", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const session = await getTaskWizardSession(ctx.from!.id);
+  if (!session) {
+    return ctx.reply("No add wizard to cancel.");
+  }
+  await cancelTaskWizard(ctx.from!.id);
+  return ctx.reply("Add wizard cancelled.");
+});
+
 bot.on("message:text", async (ctx, next) => {
   if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
     return next();
@@ -1585,6 +1886,17 @@ bot.on("message:text", async (ctx, next) => {
     return next();
   }
 
+  const taskSession = await getTaskWizardSession(ctx.from.id);
+  if (taskSession) {
+    const result = await advanceTaskWizard(
+      ctx.from.id,
+      text,
+      taskWizardContext(ctx),
+    );
+    await replyTaskWizardResult(ctx, result);
+    return;
+  }
+
   const session = await getSession(ctx.from.id);
   if (!session) {
     return next();
@@ -1592,6 +1904,48 @@ bot.on("message:text", async (ctx, next) => {
 
   const result = await advanceSession(ctx.from.id, text);
   await replyFitnessLogResult(ctx, result);
+});
+
+bot.callbackQuery(/^tk:/, async (ctx) => {
+  if (!isOwner(ctx)) {
+    await ctx.answerCallbackQuery({ text: "Boss only!", show_alert: true });
+    return;
+  }
+
+  const input = parseTaskWizardCallback(ctx.callbackQuery.data);
+  if (!input) {
+    await ctx.answerCallbackQuery({ text: "Invalid button." });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  const result = await advanceTaskWizard(
+    ctx.from!.id,
+    input,
+    taskWizardContext(ctx),
+  );
+  await replyTaskWizardResult(ctx, result);
+});
+
+bot.callbackQuery(new RegExp(`^${REMINDER_DONE_CALLBACK_PREFIX}:`), async (ctx) => {
+  if (!isOwner(ctx)) {
+    await ctx.answerCallbackQuery({ text: "Boss only!", show_alert: true });
+    return;
+  }
+
+  const todoId = parseTodoDoneCallback(ctx.callbackQuery.data);
+  if (!todoId) {
+    await ctx.answerCallbackQuery({ text: "Invalid button." });
+    return;
+  }
+
+  const todo = await setTodoDone(todoId, true);
+  await ctx.answerCallbackQuery({
+    text: todo ? "Marked done" : "Todo not found",
+  });
+  if (todo) {
+    await ctx.reply(`✅ #${todo.id} done.`);
+  }
 });
 
 bot.on("callback_query:data", async (ctx, next) => {
@@ -1734,6 +2088,30 @@ bot.command("help", async (ctx) => {
       "  /fithistory [weeks]\n" +
       "    → Gym dot grid (default 12 weeks) + recent logs (last 7 days)\n" +
       "  /gymreminder [on|off]\n" +
-      "    → Weekday 4:45 PM gym motivation DM (default on)",
+      "    → Weekday 4:45 PM gym motivation DM (default on)\n" +
+      "\n" +
+      "📋 Todos & reminders:\n" +
+      "  /addtodo\n" +
+      "    → Button wizard to add a todo\n" +
+      "  /addtodo Buy milk\n" +
+      "    → Add to inbox\n" +
+      "  /addtodo #shopping Buy milk @ tomorrow 09:00\n" +
+      "    → Add to a list with a due reminder\n" +
+      "  /todos [today|list]\n" +
+      "    → All open, today view, or one list\n" +
+      "  /addlist shopping\n" +
+      "    → Create a list\n" +
+      "  /todolists\n" +
+      "    → List names + open counts\n" +
+      "  /tododone <id> /todoundone <id> /canceltodo <id>\n" +
+      "  /todomove <id> shopping\n" +
+      "  /remind\n" +
+      "    → Button wizard to add a reminder\n" +
+      "  /remind tomorrow 15:00 Call dentist\n" +
+      "  /remind 08:00 Gym daily\n" +
+      "  /reminders\n" +
+      "  /cancelremind <id>\n" +
+      "  /canceltask\n" +
+      "    → Cancel the add wizard",
   );
 });

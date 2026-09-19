@@ -649,6 +649,9 @@ export async function startSession(
   const dateError = validateLogDate(logDate);
   if (dateError) return { reply: dateError };
 
+  const { cancelTaskWizard } = await import("./task-wizard");
+  await cancelTaskWizard(telegramUserId);
+
   const now = new Date().toISOString();
   try {
     await getDb()

@@ -20,6 +20,12 @@ import {
   isWeekdayInPhnomPenh,
   todayInPhnomPenh,
 } from "./fitness-log";
+import {
+  claimDueReminders,
+  formatReminderMessage,
+  listDueReminders,
+  reminderDoneKeyboard,
+} from "./reminders";
 import type { CronJobResult } from "./cron-job-result";
 
 export type { CronJobResult } from "./cron-job-result";
@@ -134,4 +140,47 @@ export async function runGymMotivationCron(options: {
   }
 
   return { ok: true, dryRun, skipped: false, chatId: ownerId };
+}
+
+export async function runReminderCron(
+  options: {
+    dryRun?: boolean;
+  } = {},
+): Promise<CronJobResult> {
+  const dryRun = options.dryRun ?? false;
+  if (dryRun) {
+    const due = await listDueReminders();
+    if (due.length === 0) {
+      return { ok: true, dryRun, skipped: true, reason: "none_due", sentCount: 0 };
+    }
+    return { ok: true, dryRun, skipped: false, sentCount: due.length };
+  }
+
+  const claimed = await claimDueReminders();
+
+  if (claimed.length === 0) {
+    return { ok: true, dryRun, skipped: true, reason: "none_due", sentCount: 0 };
+  }
+
+  if (!dryRun) {
+    const api = await getBotApi();
+    for (const reminder of claimed) {
+      const keyboard = reminderDoneKeyboard(reminder);
+      await api.sendMessage(
+        reminder.target_chat_id,
+        formatReminderMessage(reminder),
+        {
+          parse_mode: "HTML",
+          ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+        },
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    dryRun,
+    skipped: false,
+    sentCount: claimed.length,
+  };
 }

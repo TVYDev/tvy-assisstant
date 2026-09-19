@@ -5,6 +5,7 @@ export interface CronJobResult {
   dryRun?: boolean;
   chatId?: string;
   logDate?: string;
+  sentCount?: number;
   error?: string;
 }
 
@@ -24,6 +25,8 @@ export function formatCronJobReply(
           ? "skipped on weekends (use menu run to force)"
           : result.reason === "disabled"
             ? "gym reminder is off — /gymreminder on"
+            : result.reason === "none_due"
+              ? "no reminders were due"
             : (result.reason ?? "unknown");
     return `⏭ <b>${jobName}</b> skipped: ${reason}`;
   }
@@ -32,5 +35,9 @@ export function formatCronJobReply(
     ? `\nSent to chat <code>${result.chatId}</code>`
     : "";
   const date = result.logDate ? `\nLog date: ${result.logDate}` : "";
-  return `✅ <b>${jobName}</b> ran successfully.${target}${date}`;
+  const sent =
+    result.sentCount !== undefined
+      ? `\nSent ${result.sentCount} reminder${result.sentCount === 1 ? "" : "s"}`
+      : "";
+  return `✅ <b>${jobName}</b> ran successfully.${target}${date}${sent}`;
 }
