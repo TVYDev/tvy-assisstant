@@ -45,10 +45,13 @@ vi.mock("../reminders", () => ({
 import {
   addTodo,
   cancelTodo,
+  formatSearchTodos,
   formatTodosReply,
   getTodos,
+  matchesTodoQuery,
   moveTodo,
   parseTodoListFilter,
+  searchTodos,
   setTodoDone,
 } from "../todos";
 
@@ -82,9 +85,10 @@ beforeEach(() => {
 });
 
 describe("parseTodoListFilter", () => {
-  it("reads today, all, and list slugs", () => {
+  it("reads today, open, all, and list slugs", () => {
     expect(parseTodoListFilter("today")).toBe("today");
-    expect(parseTodoListFilter("")).toBe("all");
+    expect(parseTodoListFilter("")).toBe("open");
+    expect(parseTodoListFilter("all")).toBe("all");
     expect(parseTodoListFilter("#shopping")).toEqual({ listSlug: "shopping" });
   });
 });
@@ -203,44 +207,160 @@ describe("getTodos today filter", () => {
   });
 });
 
+describe("getTodos all filter", () => {
+  it("returns both open and done items", async () => {
+    mockFindLists.mockResolvedValue([inbox]);
+    mockFindTodos.mockResolvedValue([
+      {
+        id: 1,
+        listId: 1,
+        title: "Open item",
+        done: false,
+        dueAt: null,
+        reminderId: null,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        list: inbox,
+      },
+      {
+        id: 2,
+        listId: 1,
+        title: "Done item",
+        done: true,
+        dueAt: null,
+        reminderId: null,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        list: inbox,
+      },
+    ]);
+
+    const result = await getTodos("all", NOW);
+    expect(result.open.map((item) => item.title)).toEqual(["Open item"]);
+    expect(result.done.map((item) => item.title)).toEqual(["Done item"]);
+  });
+});
+
 describe("formatTodosReply", () => {
+  const eggs = {
+    id: 1,
+    list_id: 2,
+    list_slug: "shopping",
+    list_title: "Shopping",
+    title: "Eggs",
+    done: false,
+    due_at: null,
+    reminder_id: null,
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+  const email = {
+    id: 2,
+    list_id: 1,
+    list_slug: "inbox",
+    list_title: "Inbox",
+    title: "Email",
+    done: false,
+    due_at: null,
+    reminder_id: null,
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+
   it("groups open todos under list headings", () => {
     const text = formatTodosReply(
-      "all",
-      {
-        open: [
-          {
-            id: 1,
-            list_id: 2,
-            list_slug: "shopping",
-            list_title: "Shopping",
-            title: "Eggs",
-            done: false,
-            due_at: null,
-            reminder_id: null,
-            created_at: NOW.toISOString(),
-            updated_at: NOW.toISOString(),
-          },
-          {
-            id: 2,
-            list_id: 1,
-            list_slug: "inbox",
-            list_title: "Inbox",
-            title: "Email",
-            done: false,
-            due_at: null,
-            reminder_id: null,
-            created_at: NOW.toISOString(),
-            updated_at: NOW.toISOString(),
-          },
-        ],
-        doneToday: [],
-      },
+      "open",
+      { open: [eggs, email], done: [], doneToday: [] },
       NOW,
     );
     expect(text).toContain("inbox");
     expect(text.indexOf("inbox")).toBeLessThan(text.indexOf("shopping"));
     expect(text).toContain("#1 Eggs");
+  });
+
+  it("includes done items for the all view", () => {
+    const text = formatTodosReply(
+      "all",
+      {
+        open: [eggs],
+        done: [{ ...email, done: true, title: "Old email" }],
+        doneToday: [],
+      },
+      NOW,
+    );
+    expect(text).toContain("All todos");
+    expect(text).toContain("#1 Eggs");
+    expect(text).toContain("✓ #2 Old email");
+  });
+});
+
+describe("todo search", () => {
+  const milk = {
+    id: 4,
+    list_id: 2,
+    list_slug: "shopping",
+    list_title: "Shopping",
+    title: "Buy milk",
+    done: false,
+    due_at: null,
+    reminder_id: null,
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+
+  it("matches title contains, case insensitive", () => {
+    expect(matchesTodoQuery(milk, "MILK")).toBe(true);
+    expect(matchesTodoQuery(milk, "eggs")).toBe(false);
+  });
+
+  it("matches list name too", () => {
+    expect(matchesTodoQuery(milk, "shop")).toBe(true);
+  });
+
+  it("finds open and done todos from the database", async () => {
+    mockFindLists.mockResolvedValue([inbox, shopping]);
+    mockFindTodos.mockResolvedValue([
+      {
+        id: 4,
+        listId: 2,
+        title: "Buy milk",
+        done: false,
+        dueAt: null,
+        reminderId: null,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        list: shopping,
+      },
+      {
+        id: 5,
+        listId: 1,
+        title: "Milk bread",
+        done: true,
+        dueAt: null,
+        reminderId: null,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        list: inbox,
+      },
+      {
+        id: 6,
+        listId: 1,
+        title: "Call mom",
+        done: false,
+        dueAt: null,
+        reminderId: null,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        list: inbox,
+      },
+    ]);
+
+    const items = await searchTodos("milk", NOW);
+    expect(items.map((item) => item.title)).toEqual(["Buy milk", "Milk bread"]);
+    const text = formatSearchTodos("milk", items, NOW);
+    expect(text).toContain('Search "milk" (2)');
+    expect(text).toContain("#4 Buy milk");
+    expect(text).toContain("✓ #5 Milk bread");
   });
 });
 

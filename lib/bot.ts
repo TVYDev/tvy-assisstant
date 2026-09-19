@@ -113,6 +113,8 @@ import {
   moveTodo,
   parseAddTodoCommand,
   parseTodoListFilter,
+  searchTodos,
+  formatSearchTodos,
   setTodoDone,
 } from "./todos";
 import {
@@ -1418,6 +1420,11 @@ bot.callbackQuery(/^om:/, async (ctx) => {
       break;
     }
     case "om:run:todos": {
+      const listed = await getTodos("open");
+      await replyWithTaskFooter(ctx, formatTodosReply("open", listed));
+      break;
+    }
+    case "om:run:todos:all": {
       const listed = await getTodos("all");
       await replyWithTaskFooter(ctx, formatTodosReply("all", listed));
       break;
@@ -1776,6 +1783,16 @@ bot.command("todos", async (ctx) => {
   return replyWithTaskFooter(ctx, formatTodosReply(filter, listed));
 });
 
+bot.command("todosearch", async (ctx) => {
+  if (!isOwner(ctx)) return notBossReply(ctx);
+  const query = ctx.match?.trim() ?? "";
+  if (!query) {
+    return ctx.reply("Usage: /todosearch milk");
+  }
+  const items = await searchTodos(query);
+  return replyWithTaskFooter(ctx, formatSearchTodos(query, items));
+});
+
 bot.command("tododone", async (ctx) => {
   if (!isOwner(ctx)) return notBossReply(ctx);
   const id = parseInt(ctx.match?.trim() ?? "", 10);
@@ -2097,8 +2114,16 @@ bot.command("help", async (ctx) => {
       "    → Add to inbox\n" +
       "  /addtodo #shopping Buy milk @ tomorrow 09:00\n" +
       "    → Add to a list with a due reminder\n" +
-      "  /todos [today|list]\n" +
-      "    → All open, today view, or one list\n" +
+      "  /todos\n" +
+      "    → Open todos, grouped by list\n" +
+      "  /todos all\n" +
+      "    → Open and done, grouped by list\n" +
+      "  /todos today\n" +
+      "    → Due today + overdue (done today at the bottom)\n" +
+      "  /todos shopping\n" +
+      "    → Open items in one list\n" +
+      "  /todosearch milk\n" +
+      "    → Find todos whose title contains a word (open and done)\n" +
       "  /addlist shopping\n" +
       "    → Create a list\n" +
       "  /todolists\n" +

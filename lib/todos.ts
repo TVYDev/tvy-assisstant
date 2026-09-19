@@ -36,7 +36,13 @@ export interface TodoRecord {
   updated_at: string;
 }
 
-export type TodoListFilter = "all" | "today" | { listSlug: string };
+export type TodoListFilter = "open" | "all" | "today" | { listSlug: string };
+
+export interface TodoListResult {
+  open: TodoRecord[];
+  done: TodoRecord[];
+  doneToday: TodoRecord[];
+}
 
 function dbError(prefix: string, error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
@@ -239,7 +245,7 @@ export async function getTodoById(id: number): Promise<TodoRecord | null> {
 export async function getTodos(
   filter: TodoListFilter,
   now = new Date(),
-): Promise<{ open: TodoRecord[]; doneToday: TodoRecord[] }> {
+): Promise<TodoListResult> {
   await ensureInboxList();
 
   try {
@@ -252,8 +258,20 @@ export async function getTodos(
       .filter((row) => row.list)
       .map((row) => mapTodo(row, row.list));
 
+    if (filter === "open") {
+      return {
+        open: mapped.filter((item) => !item.done),
+        done: [],
+        doneToday: [],
+      };
+    }
+
     if (filter === "all") {
-      return { open: mapped.filter((item) => !item.done), doneToday: [] };
+      return {
+        open: mapped.filter((item) => !item.done),
+        done: mapped.filter((item) => item.done),
+        doneToday: [],
+      };
     }
 
     if (filter !== "today") {
@@ -261,7 +279,7 @@ export async function getTodos(
       const open = mapped.filter(
         (item) => !item.done && item.list_slug === slug,
       );
-      return { open, doneToday: [] };
+      return { open, done: [], doneToday: [] };
     }
 
     const start = startOfDayInPhnomPenh(now);
@@ -276,10 +294,54 @@ export async function getTodos(
       const updated = new Date(item.updated_at);
       return updated >= start && updated < nextStart;
     });
-    return { open, doneToday };
+    return { open, done: [], doneToday };
   } catch (error) {
     throw dbError("Failed to list todos", error);
   }
+}
+
+export function matchesTodoQuery(todo: TodoRecord, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return false;
+  return (
+    todo.title.toLowerCase().includes(needle) ||
+    todo.list_slug.includes(needle) ||
+    todo.list_title.toLowerCase().includes(needle)
+  );
+}
+
+export async function searchTodos(
+  query: string,
+  now = new Date(),
+): Promise<TodoRecord[]> {
+  const needle = query.trim();
+  if (!needle) return [];
+  const { open, done } = await getTodos("all", now);
+  return [...open, ...done].filter((item) => matchesTodoQuery(item, needle));
+}
+
+export function formatSearchTodos(
+  query: string,
+  items: TodoRecord[],
+  now = new Date(),
+): string {
+  const needle = query.trim();
+  if (!needle) {
+    return "Usage: /todosearch milk";
+  }
+  if (items.length === 0) {
+    return `🔍 No todos matching "${needle}".`;
+  }
+
+  const lines = [`🔍 Search "${needle}" (${items.length})`, ""];
+  for (const item of items) {
+    if (item.done) {
+      lines.push(`✓ #${item.id} ${item.title} — ${item.list_slug}`);
+    } else {
+      lines.push(formatTodoLine(item, now, true));
+    }
+  }
+  return lines.join("\n");
 }
 
 export async function setTodoDone(
@@ -343,8 +405,11 @@ export async function moveTodo(
 
 export function parseTodoListFilter(raw: string | undefined): TodoListFilter {
   const value = raw?.trim() ?? "";
-  if (!value || value.toLowerCase() === "all") return "all";
-  if (value.toLowerCase() === "today") return "today";
+  if (!value) return "open";
+  const lowered = value.toLowerCase();
+  if (lowered === "open") return "open";
+  if (lowered === "all") return "all";
+  if (lowered === "today") return "today";
   const slug = normalizeListSlug(value.startsWith("#") ? value.slice(1) : value);
   return { listSlug: slug ?? value.toLowerCase() };
 }
@@ -362,14 +427,18 @@ export function formatTodoLists(
 
 export function formatTodosReply(
   filter: TodoListFilter,
-  result: { open: TodoRecord[]; doneToday: TodoRecord[] },
+  result: TodoListResult,
   now = new Date(),
 ): string {
   if (filter === "today") {
     return formatTodayTodos(result, now);
   }
 
-  if (filter !== "all") {
+  if (filter === "all") {
+    return formatAllTodos(result, now);
+  }
+
+  if (filter !== "open") {
     const slug = filter.listSlug;
     if (result.open.length === 0) {
       return `📋 No open todos in #${slug}.`;
@@ -380,24 +449,53 @@ export function formatTodosReply(
     );
   }
 
-  if (result.open.length === 0) {
+  return formatGroupedOpenTodos(result.open, now);
+}
+
+function formatAllTodos(result: TodoListResult, now: Date): string {
+  if (result.open.length === 0 && result.done.length === 0) {
+    return "📋 No todos yet.\n\nTap Add todo or /addtodo to start a list.";
+  }
+
+  const grouped = new Map<string, { open: TodoRecord[]; done: TodoRecord[] }>();
+  for (const item of result.open) {
+    const group = grouped.get(item.list_slug) ?? { open: [], done: [] };
+    group.open.push(item);
+    grouped.set(item.list_slug, group);
+  }
+  for (const item of result.done) {
+    const group = grouped.get(item.list_slug) ?? { open: [], done: [] };
+    group.done.push(item);
+    grouped.set(item.list_slug, group);
+  }
+
+  const slugs = sortListSlugs([...grouped.keys()]);
+  const sections = [`📋 All todos (${result.open.length} open, ${result.done.length} done)`, ""];
+  for (const slug of slugs) {
+    const group = grouped.get(slug) ?? { open: [], done: [] };
+    sections.push(
+      `${listEmoji(slug)} ${slug} (${group.open.length} open, ${group.done.length} done)`,
+      ...group.open.map((item) => formatTodoLine(item, now, false)),
+      ...group.done.map((item) => `✓ #${item.id} ${item.title}`),
+      "",
+    );
+  }
+  return sections.join("\n").trimEnd();
+}
+
+function formatGroupedOpenTodos(open: TodoRecord[], now: Date): string {
+  if (open.length === 0) {
     return "📋 No open todos.\n\nTap Add todo or /addtodo to start a list.";
   }
 
   const grouped = new Map<string, TodoRecord[]>();
-  for (const item of result.open) {
-    const key = item.list_slug;
-    const list = grouped.get(key) ?? [];
+  for (const item of open) {
+    const list = grouped.get(item.list_slug) ?? [];
     list.push(item);
-    grouped.set(key, list);
+    grouped.set(item.list_slug, list);
   }
 
-  const slugs = [...grouped.keys()].sort((a, b) => {
-    if (a === INBOX_SLUG) return -1;
-    if (b === INBOX_SLUG) return 1;
-    return a.localeCompare(b);
-  });
-
+  const slugs = sortListSlugs([...grouped.keys()]);
   const sections: string[] = [];
   for (const slug of slugs) {
     const items = grouped.get(slug) ?? [];
@@ -409,10 +507,15 @@ export function formatTodosReply(
   return sections.join("\n");
 }
 
-function formatTodayTodos(
-  result: { open: TodoRecord[]; doneToday: TodoRecord[] },
-  now: Date,
-): string {
+function sortListSlugs(slugs: string[]): string[] {
+  return slugs.sort((a, b) => {
+    if (a === INBOX_SLUG) return -1;
+    if (b === INBOX_SLUG) return 1;
+    return a.localeCompare(b);
+  });
+}
+
+function formatTodayTodos(result: TodoListResult, now: Date): string {
   const lines = [
     `📅 Today (${result.open.length} open)`,
     "",
