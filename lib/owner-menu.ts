@@ -57,12 +57,22 @@ export const OWNER_MENU_FIT_TEXT =
   "<code>/gymreminder on|off</code> — weekday 4:45 PM nudge\n" +
   "<code>/cancelfit</code> — cancel in-progress session";
 
+export const OWNER_MENU_TODOS_TEXT =
+  "📋 <b>Todos & reminders</b>\n\n" +
+  "Tap <b>Add todo</b> or <b>Add reminder</b> for the button wizard.\n" +
+  "<code>/addtodo Buy milk</code> — inbox\n" +
+  "<code>/addtodo #shopping Buy milk @ tomorrow 09:00</code>\n" +
+  "<code>/todos today</code> — due today + overdue\n" +
+  "<code>/remind tomorrow 15:00 Call dentist</code>\n" +
+  "<code>/canceltask</code> — cancel the add wizard";
+
 export const OWNER_MENU_CRONS_TEXT =
   "⏰ <b>Scheduled crons</b>\n\n" +
   "Tap to run the same job as Vercel cron (posts for real).\n\n" +
   "📺 <b>YouTube reminder</b> — 1st of month, 08:00 (UTC+7)\n" +
   "🌅 <b>Fitness reminder</b> — daily 07:50 (UTC+7)\n" +
-  "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n\n" +
+  "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
+  "⏰ <b>Due reminders</b> — every minute\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
 export const OWNER_MENU_HELP_TEXT =
@@ -71,6 +81,7 @@ export const OWNER_MENU_HELP_TEXT =
   "Type <code>/menu</code> anytime to reopen this panel.\n" +
   "Use <b>Stickers</b> in the menu to configure follow-up stickers.\n" +
   "Use <b>Fit</b> for daily logging shortcuts.\n" +
+  "Use <b>Todos</b> to add lists, todos, and reminders.\n" +
   "Use <b>Crons</b> to manually re-run scheduled jobs.\n\n" +
   "Public users only see: /owe /qr /about /help";
 
@@ -98,6 +109,11 @@ const OWNER_COMMANDS = [
   { command: "fithistory", description: "View fitness log history" },
   { command: "gymreminder", description: "Toggle gym motivation reminder" },
   { command: "cancelfit", description: "Cancel in-progress fitness log" },
+  { command: "todos", description: "List todos (today / list name)" },
+  { command: "addtodo", description: "Add a todo or start the wizard" },
+  { command: "remind", description: "Add a reminder or start the wizard" },
+  { command: "reminders", description: "List upcoming reminders" },
+  { command: "canceltask", description: "Cancel the add-todo/reminder wizard" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
 ] as const;
@@ -114,8 +130,9 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
     .text("🎭 Stickers", "om:stickers")
     .row()
     .text("🏋️ Fit", "om:fit")
-    .text("⏰ Crons", "om:cron")
+    .text("📋 Todos", "om:todo")
     .row()
+    .text("⏰ Crons", "om:cron")
     .text("📖 Help", "om:help");
 }
 
@@ -167,12 +184,42 @@ export function ownerFitMenuKeyboard(): InlineKeyboard {
     .text("« Main menu", "om:main");
 }
 
+export function ownerTodosMenuKeyboard(
+  lists: Array<{ slug: string; title: string }> = [],
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text("➕ Add todo", "om:run:todo")
+    .text("⏰ Add reminder", "om:run:remind")
+    .row()
+    .text("📅 Today", "om:run:todos:today")
+    .text("📋 All", "om:run:todos")
+    .row()
+    .text("⏰ Reminders", "om:run:reminders")
+    .text("❌ Cancel wizard", "om:run:canceltask")
+    .row();
+
+  for (let i = 0; i < lists.length; i += 2) {
+    keyboard.text(`#${lists[i].slug}`, `om:run:todos:list:${lists[i].slug}`);
+    if (lists[i + 1]) {
+      keyboard.text(
+        `#${lists[i + 1].slug}`,
+        `om:run:todos:list:${lists[i + 1].slug}`,
+      );
+    }
+    keyboard.row();
+  }
+
+  return keyboard.text("« Main menu", "om:main");
+}
+
 export function ownerCronsMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text("📺 YouTube reminder", "om:run:cron:youtube")
     .row()
     .text("🌅 Fitness reminder", "om:run:cron:fitness")
     .text("💪 Gym motivation", "om:run:cron:gym")
+    .row()
+    .text("⏰ Due reminders", "om:run:cron:reminders")
     .row()
     .text("« Main menu", "om:main");
 }

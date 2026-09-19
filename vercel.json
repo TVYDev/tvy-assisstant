@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/gym-motivation",
       "schedule": "45 9 * * 1-5"
+    },
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "* * * * *"
     }
   ]
 }

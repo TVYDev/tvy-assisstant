@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   date,
+  index,
   integer,
   numeric,
   pgTable,
@@ -150,6 +151,59 @@ export const fitnessLogSessions = pgTable("fitness_log_sessions", {
   ...timestamps,
 });
 
+export const todoLists = pgTable("todo_lists", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  ...timestamps,
+});
+
+export const todos = pgTable(
+  "todos",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    listId: bigint("list_id", { mode: "number" })
+      .notNull()
+      .references(() => todoLists.id, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    done: boolean("done").notNull().default(false),
+    dueAt: timestamp("due_at", { withTimezone: true, mode: "string" }),
+    reminderId: bigint("reminder_id", { mode: "number" }),
+    ...timestamps,
+  },
+  (table) => [
+    index("idx_todos_list_id_done").on(table.listId, table.done),
+    index("idx_todos_due_at").on(table.dueAt),
+  ],
+);
+
+export const reminders = pgTable(
+  "reminders",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    title: text("title").notNull(),
+    remindAt: timestamp("remind_at", { withTimezone: true, mode: "string" }).notNull(),
+    recurrence: text("recurrence"),
+    targetChatId: bigint("target_chat_id", { mode: "number" }).notNull(),
+    status: text("status").notNull().default("pending"),
+    todoId: bigint("todo_id", { mode: "number" }).references(() => todos.id, {
+      onDelete: "set null",
+    }),
+    lastSentAt: timestamp("last_sent_at", { withTimezone: true, mode: "string" }),
+    ...timestamps,
+  },
+  (table) => [index("idx_reminders_status_remind_at").on(table.status, table.remindAt)],
+);
+
+export const taskWizardSessions = pgTable("task_wizard_sessions", {
+  telegramUserId: bigint("telegram_user_id", { mode: "number" }).primaryKey(),
+  kind: text("kind").notNull(),
+  step: text("step").notNull(),
+  payload: text("payload").notNull().default("{}"),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+  ...timestamps,
+});
+
 export const telegramUsersRelations = relations(telegramUsers, ({ one }) => ({
   debtRecord: one(debtRecords, {
     fields: [telegramUsers.shortcode],
@@ -169,5 +223,23 @@ export const debtItemsRelations = relations(debtItems, ({ one }) => ({
   record: one(debtRecords, {
     fields: [debtItems.debtRecordId],
     references: [debtRecords.id],
+  }),
+}));
+
+export const todoListsRelations = relations(todoLists, ({ many }) => ({
+  todos: many(todos),
+}));
+
+export const todosRelations = relations(todos, ({ one }) => ({
+  list: one(todoLists, {
+    fields: [todos.listId],
+    references: [todoLists.id],
+  }),
+}));
+
+export const remindersRelations = relations(reminders, ({ one }) => ({
+  todo: one(todos, {
+    fields: [reminders.todoId],
+    references: [todos.id],
   }),
 }));

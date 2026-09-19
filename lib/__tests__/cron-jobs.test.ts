@@ -29,4 +29,21 @@ describe("formatCronJobReply", () => {
     expect(text).toContain("failed");
     expect(text).toContain("OWNER_TELEGRAM_ID");
   });
+
+  it("formats no due reminders", () => {
+    const text = formatCronJobReply("Due reminders", {
+      ok: true,
+      skipped: true,
+      reason: "none_due",
+    });
+    expect(text).toContain("no reminders were due");
+  });
+
+  it("formats sent reminder count", () => {
+    const text = formatCronJobReply("Due reminders", {
+      ok: true,
+      sentCount: 2,
+    });
+    expect(text).toContain("Sent 2 reminders");
+  });
 });
