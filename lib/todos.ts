@@ -300,7 +300,9 @@ export async function setTodoDone(
       await cancelReminderForTodo(id);
     }
 
-    return row ? mapTodo(row, existing) : null;
+    return row
+      ? mapTodo(row, { slug: existing.list_slug, title: existing.list_title })
+      : null;
   } catch (error) {
     throw dbError("Failed to update todo", error);
   }
