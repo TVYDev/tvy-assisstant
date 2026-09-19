@@ -63,6 +63,8 @@ export const OWNER_MENU_TODOS_TEXT =
   "<code>/addtodo Buy milk</code> — inbox\n" +
   "<code>/addtodo #shopping Buy milk @ tomorrow 09:00</code>\n" +
   "<code>/todos today</code> — due today + overdue\n" +
+  "<code>/todos all</code> — open and done\n" +
+  "<code>/todosearch milk</code> — title contains\n" +
   "<code>/remind tomorrow 15:00 Call dentist</code>\n" +
   "<code>/canceltask</code> — cancel the add wizard";
 
@@ -109,7 +111,8 @@ const OWNER_COMMANDS = [
   { command: "fithistory", description: "View fitness log history" },
   { command: "gymreminder", description: "Toggle gym motivation reminder" },
   { command: "cancelfit", description: "Cancel in-progress fitness log" },
-  { command: "todos", description: "List todos (today / list name)" },
+  { command: "todos", description: "List todos (today / all / list name)" },
+  { command: "todosearch", description: "Search todos by word" },
   { command: "addtodo", description: "Add a todo or start the wizard" },
   { command: "remind", description: "Add a reminder or start the wizard" },
   { command: "reminders", description: "List upcoming reminders" },
@@ -192,9 +195,11 @@ export function ownerTodosMenuKeyboard(
     .text("⏰ Add reminder", "om:run:remind")
     .row()
     .text("📅 Today", "om:run:todos:today")
-    .text("📋 All", "om:run:todos")
+    .text("📋 Open", "om:run:todos")
     .row()
+    .text("📚 All + done", "om:run:todos:all")
     .text("⏰ Reminders", "om:run:reminders")
+    .row()
     .text("❌ Cancel wizard", "om:run:canceltask")
     .row();
 

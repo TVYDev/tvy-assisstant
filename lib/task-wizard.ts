@@ -101,7 +101,7 @@ export function taskListFooterKeyboard(): TaskWizardKeyboard {
     ],
     [
       { text: "Today", callback_data: "om:run:todos:today" },
-      { text: "All", callback_data: "om:run:todos" },
+      { text: "All + done", callback_data: "om:run:todos:all" },
     ],
     [{ text: "Cancel wizard", callback_data: "om:run:canceltask" }],
   ];
