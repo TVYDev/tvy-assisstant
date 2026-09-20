@@ -92,6 +92,7 @@ export function DockNav() {
         { href: "/fitness", label: "Fit", icon: <IconFit /> },
         { href: "/tasks", label: "Tasks", icon: <IconTasks /> },
         { href: "/more", label: "More", icon: <IconMore /> },
+        { href: "/about", label: "About", icon: <IconAbout /> },
       ]
     : [
         { href: "/", label: "Home", icon: <IconHome /> },
