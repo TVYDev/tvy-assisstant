@@ -54,22 +54,21 @@ export function sessionPayload(session: MiniAppSession): SessionPayload {
 
 export async function getHomePayload(session: MiniAppSession) {
   if (session.isOwner) {
-    const [allowe, fitness, gymReminderEnabled, todos, reminders] =
-      await Promise.all([
-        getAlloweSnapshot(),
-        getLogForDate(todayInPhnomPenh()),
-        isGymMotivationReminderEnabled(),
-        getTodos("today"),
-        listPendingReminders(),
-      ]);
+    const [allowe, fitness, todos, reminders] = await Promise.all([
+      getAlloweSnapshot(),
+      getLogForDate(todayInPhnomPenh()),
+      getTodos("today"),
+      listPendingReminders(),
+    ]);
     return {
       kind: "owner" as const,
       allowe,
       fitness,
-      gymReminderEnabled,
-      todosOpen: todos.open.length,
-      todosDoneToday: todos.doneToday.length,
-      remindersDueSoon: reminders.slice(0, 8) as ReminderRecord[],
+      todayTodos: {
+        open: todos.open,
+        doneToday: todos.doneToday,
+      },
+      remindersDueSoon: reminders.slice(0, 3) as ReminderRecord[],
       reminderCount: reminders.length,
     };
   }
@@ -103,23 +102,19 @@ export type PersonLedger = {
 
 export async function getPeoplePayload(): Promise<{
   people: Array<TelegramUserRow & { ledger: LedgerRow | null }>;
-  shortcodes: string[];
-  owing: Awaited<ReturnType<typeof getAlloweSnapshot>>;
 }> {
-  const [users, rows, shortcodes, owing] = await Promise.all([
+  const [users, rows] = await Promise.all([
     getAllTelegramUsers(),
     getLedgerRows(),
-    getKnownShortcodes(),
-    getAlloweSnapshot(),
   ]);
   const byCode = new Map(rows.map((row) => [row.shortcode, row]));
   return {
-    people: users.map((user) => ({
-      ...user,
-      ledger: user.shortcode ? (byCode.get(user.shortcode) ?? null) : null,
-    })),
-    shortcodes,
-    owing,
+    people: users
+      .map((user) => ({
+        ...user,
+        ledger: user.shortcode ? (byCode.get(user.shortcode) ?? null) : null,
+      }))
+      .sort((a, b) => (b.ledger?.netTotal ?? 0) - (a.ledger?.netTotal ?? 0)),
   };
 }
 

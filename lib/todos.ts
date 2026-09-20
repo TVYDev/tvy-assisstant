@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { todoLists, todos } from "./db/schema";
 import {
@@ -251,6 +251,7 @@ export async function getTodos(
   try {
     const rows = await getDb().query.todos.findMany({
       with: { list: true },
+      where: todosWhere(filter, now),
       orderBy: (table, { asc: orderAsc }) => [orderAsc(table.id)],
     });
 
@@ -401,6 +402,25 @@ export async function moveTodo(
   } catch (error) {
     throw dbError("Failed to move todo", error);
   }
+}
+
+function todosWhere(filter: TodoListFilter, now: Date) {
+  if (filter === "all") return undefined;
+  if (filter === "open" || filter !== "today") {
+    return eq(todos.done, false);
+  }
+
+  const start = startOfDayInPhnomPenh(now);
+  const end = endOfDayInPhnomPenh(now);
+  const nextStart = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return or(
+    and(eq(todos.done, false), isNotNull(todos.dueAt), lte(todos.dueAt, end.toISOString())),
+    and(
+      eq(todos.done, true),
+      gte(todos.updatedAt, start.toISOString()),
+      lte(todos.updatedAt, nextStart.toISOString()),
+    ),
+  );
 }
 
 export function parseTodoListFilter(raw: string | undefined): TodoListFilter {
