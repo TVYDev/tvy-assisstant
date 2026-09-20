@@ -1,16 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { cancelTodoAction, setTodoDoneAction } from "@/app/actions/mini";
 import { SnapshotCards } from "@/components/mini/snapshot-cards";
 import { Money } from "@/components/mini/money";
+import { TodoItem } from "@/components/mini/todo-item";
 import { ErrorBanner, LoadingBlock, PageHeader } from "@/components/mini/ui";
+import { useMiniApp } from "@/components/mini/provider";
 import { useMiniGet } from "@/components/mini/use-mini-get";
+import {
+  applyTodoDone,
+  formatHeadingDate,
+  formatReminderGlance,
+  removeTodo,
+} from "@/lib/mini-app/todo-display";
 import type { getHomePayload } from "@/lib/mini-app/queries";
+import type { TodoRecord } from "@/lib/todos";
 
 type HomePayload = Awaited<ReturnType<typeof getHomePayload>>;
 
+const HOME_OPEN_CAP = 8;
+
 export default function HomePage() {
-  const { data, error, loading } = useMiniGet<HomePayload>("/api/mini/home");
+  const { data, error, loading, reload, setData } = useMiniGet<HomePayload>(
+    "/api/mini/home",
+  );
 
   if (loading || !data) {
     return (
@@ -40,75 +56,171 @@ export default function HomePage() {
   }
 
   return (
+    <OwnerHome
+      data={data}
+      error={error}
+      setData={setData}
+      reload={reload}
+    />
+  );
+}
+
+function OwnerHome({
+  data,
+  error,
+  setData,
+  reload,
+}: {
+  data: Extract<HomePayload, { kind: "owner" }>;
+  error: string | null;
+  setData: Dispatch<SetStateAction<HomePayload | null>>;
+  reload: (opts?: { silent?: boolean }) => Promise<void>;
+}) {
+  const router = useRouter();
+  const { initData, haptic } = useMiniApp();
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  async function toggleTodo(todo: TodoRecord) {
+    const nextDone = !todo.done;
+    setBusyId(todo.id);
+    setData((current) => {
+      if (!current || current.kind !== "owner") return current;
+      return {
+        ...current,
+        todayTodos: applyTodoDone(current.todayTodos, todo.id, nextDone),
+      };
+    });
+    const result = await setTodoDoneAction(initData, todo.id, nextDone);
+    setBusyId(null);
+    if (!result.ok) {
+      haptic("error");
+      await reload({ silent: true });
+      return;
+    }
+    haptic("success");
+  }
+
+  async function deleteTodo(todo: TodoRecord) {
+    setData((current) => {
+      if (!current || current.kind !== "owner") return current;
+      return {
+        ...current,
+        todayTodos: removeTodo(current.todayTodos, todo.id),
+      };
+    });
+    const result = await cancelTodoAction(initData, todo.id);
+    if (!result.ok) {
+      haptic("error");
+      await reload({ silent: true });
+      return;
+    }
+    haptic("success");
+  }
+
+  const { open, doneToday } = data.todayTodos;
+  const visibleOpen = open.slice(0, HOME_OPEN_CAP);
+  const hiddenOpen = open.length - visibleOpen.length;
+
+  return (
     <>
-      <PageHeader title="Admin" subtitle="Everyone who still owes" />
       {error ? <ErrorBanner message={error} /> : null}
 
-      <div className="stats shadow w-full bg-base-200 mb-4">
-        <div className="stat">
-          <div className="stat-title">Combined net</div>
-          <div className="stat-value text-2xl">
-            <Money amount={data.allowe.grandTotal} />
-          </div>
-          <div className="stat-desc">{data.allowe.rows.length} people</div>
-        </div>
-      </div>
+      <section className="mb-5">
+        <Link href="/tasks" className="mb-1 flex items-end justify-between gap-3">
+          <h1 className="text-[1.75rem] font-semibold leading-none tracking-tight">
+            Today
+          </h1>
+          <span className="text-sm text-base-content/45">{formatHeadingDate()}</span>
+        </Link>
 
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="card bg-base-200">
-          <div className="card-body py-4">
-            <p className="text-xs opacity-70">Fitness today</p>
-            <p className="font-semibold">
-              {data.fitness
-                ? `${data.fitness.weight_kg.toFixed(1)} kg · ${data.fitness.gym_status}`
-                : "Not logged"}
-            </p>
-          </div>
-        </div>
-        <div className="card bg-base-200">
-          <div className="card-body py-4">
-            <p className="text-xs opacity-70">Todos today</p>
-            <p className="font-semibold">
-              {data.todosOpen} open · {data.todosDoneToday} done
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <ul className="list bg-base-100 rounded-box border border-base-300 mb-4">
-        {data.allowe.rows.length === 0 ? (
-          <li className="list-row">Everyone is settled. Nice.</li>
+        {open.length === 0 ? (
+          <Link href="/tasks" className="block py-5 text-sm text-base-content/45">
+            {doneToday.length > 0
+              ? `${doneToday.length} done today. Add the next one →`
+              : "Nothing due. Add a to-do →"}
+          </Link>
         ) : (
-          data.allowe.rows.map((row) => (
-            <li key={row.shortcode} className="list-row">
-              <Link href={`/people/${row.shortcode}`} className="flex flex-1 justify-between gap-3">
+          <ul>
+            {visibleOpen.map((todo) => (
+              <TodoItem
+                key={todo.id}
+                todo={todo}
+                lists={[]}
+                expanded={false}
+                busy={busyId === todo.id}
+                onToggle={() => void toggleTodo(todo)}
+                onExpand={() => router.push("/tasks")}
+                onSwipeDelete={() => void deleteTodo(todo)}
+              />
+            ))}
+          </ul>
+        )}
+
+        {hiddenOpen > 0 || doneToday.length > 0 ? (
+          <Link href="/tasks" className="mt-2 inline-block text-sm text-info">
+            {hiddenOpen > 0 ? `${hiddenOpen} more` : null}
+            {hiddenOpen > 0 && doneToday.length > 0 ? " · " : null}
+            {doneToday.length > 0 ? `${doneToday.length} done` : null}
+          </Link>
+        ) : null}
+      </section>
+
+      <div className="mb-5 grid grid-cols-2 gap-2">
+        <Link href="/people" className="rounded-2xl bg-base-200 px-3 py-3">
+          <p className="text-xs text-base-content/50">Owed</p>
+          <p className="font-semibold">
+            <Money amount={data.allowe.grandTotal} />
+          </p>
+          <p className="text-xs text-base-content/45">
+            {data.allowe.rows.length} people
+          </p>
+        </Link>
+        <Link href="/fitness" className="rounded-2xl bg-base-200 px-3 py-3">
+          <p className="text-xs text-base-content/50">Fitness</p>
+          <p className="font-semibold">
+            {data.fitness ? `${data.fitness.weight_kg.toFixed(1)} kg` : "Log it"}
+          </p>
+          <p className="text-xs text-base-content/45">
+            {data.fitness ? data.fitness.gym_status : "not today"}
+          </p>
+        </Link>
+      </div>
+
+      {data.allowe.rows.length > 0 ? (
+        <ul className="mb-4">
+          {data.allowe.rows.map((row) => (
+            <li key={row.shortcode}>
+              <Link
+                href={`/people/${row.shortcode}`}
+                className="flex items-center justify-between gap-3 py-2.5"
+              >
                 <span>
-                  <span className="font-semibold">{row.shortcode}</span>
-                  <span className="block text-xs opacity-70">{row.name}</span>
+                  <span className="font-medium">{row.shortcode}</span>
+                  <span className="ml-2 text-sm text-base-content/45">{row.name}</span>
                 </span>
                 <Money amount={row.netTotal} className="font-semibold text-error" />
               </Link>
             </li>
-          ))
-        )}
-      </ul>
+          ))}
+        </ul>
+      ) : null}
 
       {data.remindersDueSoon.length > 0 ? (
-        <div className="card bg-base-200">
-          <div className="card-body py-4">
-            <h2 className="card-title text-base">Upcoming reminders</h2>
-            <ul className="text-sm">
-              {data.remindersDueSoon.map((reminder) => (
-                <li key={reminder.id} className="flex justify-between gap-2">
-                  <span>{reminder.title}</span>
-                  <span className="opacity-60">
-                    {new Date(reminder.remind_at).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <Link href="/tasks" className="block">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-base-content/35">
+            Next
+          </p>
+          <ul>
+            {data.remindersDueSoon.map((reminder) => (
+              <li key={reminder.id} className="flex justify-between gap-3 py-1.5 text-sm">
+                <span className="truncate">{reminder.title}</span>
+                <span className="shrink-0 text-base-content/45">
+                  {formatReminderGlance(reminder.remind_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Link>
       ) : null}
     </>
   );
