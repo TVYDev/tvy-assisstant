@@ -100,7 +100,7 @@ After deploy:
 
 Local UI preview (not for production): open `http://localhost:3000` while `pnpm dev` is running. The app mocks the owner. Add `?as=user` to preview the public tab.
 
-Public Mini App: balance, KHQR pay, about. Owner Mini App: people ledger, fitness, todos/reminders, fees, stickers, crons.
+Public Mini App: balance, KHQR pay, about. Owner Mini App: people ledger, fitness, todos/reminders, fees, stickers, crons, about.
 
 ### Bot Commands
 

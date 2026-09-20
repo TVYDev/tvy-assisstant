@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   addFeeAction,
@@ -22,7 +23,7 @@ const STICKER_COMMANDS = ["start", "owe", "qr", "about"] as const;
 type MorePayload = Awaited<ReturnType<typeof getMorePayload>>;
 
 export default function MorePage() {
-  const { initData, haptic } = useMiniApp();
+  const { initData, haptic, session } = useMiniApp();
   const { data, error, loading, reload } = useMiniGet<MorePayload>(
     "/api/mini/owner/more",
   );
@@ -65,6 +66,16 @@ export default function MorePage() {
         <LoadingBlock />
       ) : (
         <div className="flex flex-col gap-4">
+          <Link href="/about" className="flex items-center justify-between rounded-2xl bg-base-200 px-4 py-3">
+            <span>
+              <span className="block font-semibold">About Dino</span>
+              <span className="text-xs text-base-content/50">
+                Version {session?.version ?? "…"}
+              </span>
+            </span>
+            <span className="text-sm text-info">Open</span>
+          </Link>
+
           <section className="card bg-base-100 border border-base-300">
             <div className="card-body py-4">
               <h2 className="card-title text-base">Preview /owe</h2>
