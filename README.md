@@ -88,6 +88,20 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=<VERCEL_URL>/api/telegram
 
 Replace `<TOKEN>` with your bot token and `<VERCEL_URL>` with your Vercel deployment URL (e.g. `https://your-app.vercel.app`).
 
+### 6. Telegram Mini App
+
+The Next.js homepage is the Mini App. Set `WEBHOOK_URL` to the same HTTPS origin (no `/api/telegram` suffix), for example `https://your-app.vercel.app`.
+
+After deploy:
+
+1. Open [@BotFather](https://t.me/BotFather) → your bot → **Bot Settings** → **Menu Button**.
+2. Set the URL to `WEBHOOK_URL` (the production domain). The bot also calls `setChatMenuButton` on startup when `WEBHOOK_URL` is set.
+3. `/start` shows an **Open Dino** web-app keyboard. Owner `/menu` includes a **Mini App** button.
+
+Local UI preview (not for production): open `http://localhost:3000` while `pnpm dev` is running. The app mocks the owner. Add `?as=user` to preview the public tab.
+
+Public Mini App: balance, KHQR pay, about. Owner Mini App: people ledger, fitness, todos/reminders, fees, stickers, crons.
+
 ### Bot Commands
 
 | Command    | Description                                                            |

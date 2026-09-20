@@ -1,5 +1,6 @@
 import type { Api } from "grammy";
 import { InlineKeyboard } from "grammy";
+import { getMiniAppUrl } from "./mini-app/url";
 
 export const OWNER_MENU_MAIN_TEXT =
   "🦕 <b>Admin menu</b> — boss only\n\nTap a section, or use the quick-action buttons.";
@@ -290,7 +291,7 @@ const OWNER_COMMANDS = [
 ] as const;
 
 export function ownerMainMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
+  const keyboard = new InlineKeyboard()
     .text("💸 Debts", "om:debt")
     .text("💰 Deposits", "om:dep")
     .row()
@@ -305,6 +306,12 @@ export function ownerMainMenuKeyboard(): InlineKeyboard {
     .row()
     .text("⏰ Crons", "om:cron")
     .text("📖 Help", "om:help");
+
+  const miniAppUrl = getMiniAppUrl();
+  if (miniAppUrl) {
+    keyboard.row().webApp("📱 Mini App", miniAppUrl);
+  }
+  return keyboard;
 }
 
 export function ownerDebtMenuKeyboard(): InlineKeyboard {

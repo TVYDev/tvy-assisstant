@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, Keyboard } from "grammy";
 import { version } from "../package.json";
+import { getMiniAppUrl } from "./mini-app/url";
 import {
   upsertTelegramUser,
   markYouTubePaid,
@@ -518,6 +519,21 @@ void registerBotCommands(bot.api, OWNER_ID).catch((err) => {
   console.error("Failed to register Telegram commands:", err);
 });
 
+const miniAppUrl = getMiniAppUrl();
+if (miniAppUrl) {
+  void bot.api
+    .setChatMenuButton({
+      menu_button: {
+        type: "web_app",
+        text: "Open Dino",
+        web_app: { url: miniAppUrl },
+      },
+    })
+    .catch((err) => {
+      console.error("Failed to set Mini App menu button:", err);
+    });
+}
+
 bot.command(
   [
     "start",
@@ -547,6 +563,13 @@ bot.command(
         "🧾 Keep a detailed debt ledger so Vannyou never loses track\n" +
         "\n" +
         "I may have a round belly and a silly face, but my memory for unpaid debts is SHARP. 🦕🔪",
+      miniAppUrl
+        ? {
+            reply_markup: new Keyboard()
+              .webApp("Open Dino", miniAppUrl)
+              .resized(),
+          }
+        : undefined,
     );
     await maybeSendCommandFollowupSticker(ctx, "start");
   },

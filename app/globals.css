@@ -1,26 +1,29 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, night;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background: var(--tg-bg, var(--color-base-100));
+  color: var(--tg-text, var(--color-base-content));
+}
+
+.mini-app-shell {
+  padding-top: max(0.75rem, env(safe-area-inset-top), var(--tg-safe-top, 0px));
+  padding-left: max(0.75rem, env(safe-area-inset-left), var(--tg-safe-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right), var(--tg-safe-right, 0px));
+  padding-bottom: calc(
+    4.75rem + max(0.5rem, env(safe-area-inset-bottom), var(--tg-safe-bottom, 0px))
+  );
 }

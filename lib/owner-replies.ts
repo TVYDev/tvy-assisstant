@@ -27,7 +27,17 @@ import {
   getYouTubeMonthsForShortcode,
 } from "./youtube-subscription";
 
-export async function buildAlloweSummary(): Promise<string> {
+export type LedgerRow = {
+  shortcode: string;
+  name: string;
+  unpaidDebt: number;
+  youtubeUnpaidMonths: number;
+  youtubeTotal: number;
+  deposit: number;
+  netTotal: number;
+};
+
+export async function getLedgerRows(): Promise<LedgerRow[]> {
   const [debtRecords, ytOwings, allUsers, depositTotals] = await Promise.all([
     getAllDebtRecords(),
     getYoutubeReminderOwings(),
@@ -52,38 +62,65 @@ export async function buildAlloweSummary(): Promise<string> {
     ...depositTotals.keys(),
   ]);
 
-  const lines: string[] = ["📊 Summary — everyone who owes", ""];
-  let grandTotal = 0;
-
+  const rows: LedgerRow[] = [];
   for (const code of [...allShortcodes].sort()) {
     const record = debtMap.get(code);
     const ytOwing = ytMap.get(code);
-    const ytUnpaid = ytOwing?.months.length ?? 0;
     const unpaidDebt = record
       ? record.items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0)
       : 0;
-    const ytTotal = ytOwing?.total ?? 0;
+    const youtubeTotal = ytOwing?.total ?? 0;
     const deposit = depositTotals.get(code) ?? 0;
-    const netTotal = calculateNetOwed({
-      owes_me: unpaidDebt,
-      i_owe: 0,
+    rows.push({
+      shortcode: code,
+      name: record?.name ?? nameMap.get(code) ?? code,
+      unpaidDebt,
+      youtubeUnpaidMonths: ytOwing?.months.length ?? 0,
+      youtubeTotal,
       deposit,
-      subOwed: ytTotal,
+      netTotal: calculateNetOwed({
+        owes_me: unpaidDebt,
+        i_owe: 0,
+        deposit,
+        subOwed: youtubeTotal,
+      }),
     });
+  }
+  return rows;
+}
 
-    if (netTotal <= 0) continue;
-    grandTotal += netTotal;
+export async function getAlloweSnapshot(): Promise<{
+  rows: LedgerRow[];
+  grandTotal: number;
+}> {
+  const rows = (await getLedgerRows()).filter((row) => row.netTotal > 0);
+  return {
+    rows,
+    grandTotal: rows.reduce((sum, row) => sum + row.netTotal, 0),
+  };
+}
 
-    const name = record?.name ?? nameMap.get(code) ?? code;
-    lines.push(`👤 ${code} (${name}) — $${netTotal.toFixed(2)} net`);
-    if (unpaidDebt > 0) lines.push(`  💸 General: $${unpaidDebt.toFixed(2)}`);
-    if (ytUnpaid > 0)
-      lines.push(`  📺 YouTube: ${ytUnpaid} month(s) = $${ytTotal.toFixed(2)}`);
-    if (deposit > 0) lines.push(`  💰 Deposit: -$${deposit.toFixed(2)}`);
+export async function buildAlloweSummary(): Promise<string> {
+  const { rows, grandTotal } = await getAlloweSnapshot();
+  const lines: string[] = ["📊 Summary — everyone who owes", ""];
+
+  for (const row of rows) {
+    lines.push(`👤 ${row.shortcode} (${row.name}) — $${row.netTotal.toFixed(2)} net`);
+    if (row.unpaidDebt > 0) {
+      lines.push(`  💸 General: $${row.unpaidDebt.toFixed(2)}`);
+    }
+    if (row.youtubeUnpaidMonths > 0) {
+      lines.push(
+        `  📺 YouTube: ${row.youtubeUnpaidMonths} month(s) = $${row.youtubeTotal.toFixed(2)}`,
+      );
+    }
+    if (row.deposit > 0) {
+      lines.push(`  💰 Deposit: -$${row.deposit.toFixed(2)}`);
+    }
     lines.push("");
   }
 
-  if (lines.length === 2) {
+  if (rows.length === 0) {
     lines.push("Everyone is settled up!! We love to see it 🦕✨");
   } else {
     lines.push("");

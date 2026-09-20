@@ -30,7 +30,7 @@ vi.mock("../deposit", () => ({
   getDepositBalanceByShortcode: vi.fn(),
 }));
 
-import { buildOweMessage, buildOweMessageForShortcode } from "../owe-message";
+import { buildOweMessage, buildOweMessageForShortcode, getOweSnapshot } from "../owe-message";
 import { getDebtByUserId, getDebtByUsername, getDebtByShortcode } from "../debt";
 import {
   getMemberByTelegramIdentity,
@@ -281,5 +281,35 @@ describe("buildOweMessageForShortcode", () => {
 
     const result = await buildOweMessageForShortcode("NOBODY");
     expect(result).toBeNull();
+  });
+});
+
+describe("getOweSnapshot", () => {
+  it("returns hasRecord false when nothing is on file", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(NO_DEBT);
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
+    mockGetMemberByTelegramIdentity.mockResolvedValue(NO_MEMBER);
+
+    const snapshot = await getOweSnapshot(123, "user", "User");
+    expect(snapshot.hasRecord).toBe(false);
+    expect(snapshot.netOwed).toBe(0);
+  });
+
+  it("returns structured debts, youtube, deposit, and net", async () => {
+    mockGetDebtByUsername.mockResolvedValue(NO_DEBT);
+    mockGetDebtByUserId.mockResolvedValue(debtRecord({ owes_me: 50 }));
+    mockGetMemberByUsername.mockResolvedValue(NO_MEMBER);
+    mockGetMemberByTelegramIdentity.mockResolvedValue(ytMember(2));
+    mockYoutubeOwing(2);
+    mockResolveDepositForTelegramUser.mockResolvedValue(15);
+
+    const snapshot = await getOweSnapshot(123, "user", "User");
+    expect(snapshot.hasRecord).toBe(true);
+    expect(snapshot.owesMe).toBe(50);
+    expect(snapshot.unpaidItems).toHaveLength(1);
+    expect(snapshot.youtubeTotal).toBe(10);
+    expect(snapshot.deposit).toBe(15);
+    expect(snapshot.netOwed).toBe(45);
   });
 });
