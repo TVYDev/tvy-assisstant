@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 const timestamps = {
@@ -194,6 +195,15 @@ export const reminders = pgTable(
   },
   (table) => [index("idx_reminders_status_remind_at").on(table.status, table.remindAt)],
 );
+
+export const words = pgTable("words", {
+  id: serial("id").primaryKey(),
+  word: varchar("word", { length: 250 }).notNull(),
+  definition: varchar("definition", { length: 500 }).notNull(),
+  pronounciationRegion: varchar("pronounciation_region", { length: 50 }),
+  pronounciation: varchar("pronounciation", { length: 250 }),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+});
 
 export const taskWizardSessions = pgTable("task_wizard_sessions", {
   telegramUserId: bigint("telegram_user_id", { mode: "number" }).primaryKey(),

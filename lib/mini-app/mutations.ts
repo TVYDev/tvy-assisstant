@@ -26,7 +26,9 @@ import {
   formatCronJobReply,
   runFitnessReminderCron,
   runGymMotivationCron,
+  runRandomWordCron,
   runReminderCron,
+  runWordOfTheDayCron,
   runYoutubeReminderCron,
 } from "../cron-jobs";
 import {
@@ -407,13 +409,15 @@ export async function ownerUpdateSticker(input: {
 }
 
 export async function ownerRunCron(
-  job: "youtube" | "fitness" | "gym" | "reminders",
+  job: "youtube" | "fitness" | "gym" | "reminders" | "word" | "random-word",
 ): Promise<string> {
   const labels = {
     youtube: "YouTube reminder",
     fitness: "Fitness reminder",
     gym: "Gym motivation",
     reminders: "Due reminders",
+    word: "Word of the day",
+    "random-word": "Random word",
   } as const;
   const result =
     job === "youtube"
@@ -422,6 +426,10 @@ export async function ownerRunCron(
         ? await runFitnessReminderCron({ force: true })
         : job === "gym"
           ? await runGymMotivationCron({ force: true })
-          : await runReminderCron();
+          : job === "word"
+            ? await runWordOfTheDayCron()
+            : job === "random-word"
+              ? await runRandomWordCron()
+              : await runReminderCron();
   return formatCronJobReply(labels[job], result);
 }

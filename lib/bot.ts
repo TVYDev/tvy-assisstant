@@ -102,7 +102,9 @@ import {
   formatCronJobReply,
   runFitnessReminderCron,
   runGymMotivationCron,
+  runRandomWordCron,
   runReminderCron,
+  runWordOfTheDayCron,
   runYoutubeReminderCron,
 } from "./cron-jobs";
 import {
@@ -1432,6 +1434,28 @@ bot.callbackQuery(/^om:/, async (ctx) => {
         });
       } catch (err) {
         await ctx.reply(`❌ Due reminders failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:cron:word": {
+      try {
+        const result = await runWordOfTheDayCron();
+        await ctx.reply(formatCronJobReply("Word of the day", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ Word of the day failed: ${(err as Error).message}`);
+      }
+      break;
+    }
+    case "om:run:cron:random-word": {
+      try {
+        const result = await runRandomWordCron();
+        await ctx.reply(formatCronJobReply("Random word", result), {
+          parse_mode: "HTML",
+        });
+      } catch (err) {
+        await ctx.reply(`❌ Random word failed: ${(err as Error).message}`);
       }
       break;
     }

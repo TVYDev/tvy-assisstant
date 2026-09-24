@@ -195,7 +195,7 @@ export async function updateStickerAction(
 
 export async function runCronAction(
   initData: string,
-  job: "youtube" | "fitness" | "gym" | "reminders",
+  job: "youtube" | "fitness" | "gym" | "reminders" | "word" | "random-word",
 ) {
   return runOwner(initData, () => mutations.ownerRunCron(job));
 }
