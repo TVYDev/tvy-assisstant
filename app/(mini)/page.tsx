@@ -125,6 +125,21 @@ function OwnerHome({
     <>
       {error ? <ErrorBanner message={error} /> : null}
 
+      {data.wordOfTheDay ? (
+        <section className="mb-5 rounded-2xl bg-base-200 px-4 py-3">
+          <p className="text-xs text-base-content/50">Word of the day · 08:19</p>
+          <p className="text-xl font-semibold">{data.wordOfTheDay.word}</p>
+          {data.wordOfTheDay.pronounciationRegion || data.wordOfTheDay.pronounciation ? (
+            <p className="text-sm text-base-content/60">
+              {[data.wordOfTheDay.pronounciationRegion, data.wordOfTheDay.pronounciation]
+                .filter(Boolean)
+                .join(" ")}
+            </p>
+          ) : null}
+          <p className="mt-1 text-sm">{data.wordOfTheDay.definition}</p>
+        </section>
+      ) : null}
+
       <section className="mb-5">
         <Link href="/tasks" className="mb-1 flex items-end justify-between gap-3">
           <h1 className="text-[1.75rem] font-semibold leading-none tracking-tight">

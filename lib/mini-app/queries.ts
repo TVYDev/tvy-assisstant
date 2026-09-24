@@ -1,4 +1,5 @@
 import { version } from "../../package.json";
+import { getTodaysLessonWord } from "../daily-word";
 import { getCommandFollowupStickerConfig } from "../command-followup-stickers";
 import {
   getDebtByShortcode,
@@ -54,14 +55,24 @@ export function sessionPayload(session: MiniAppSession): SessionPayload {
 
 export async function getHomePayload(session: MiniAppSession) {
   if (session.isOwner) {
-    const [allowe, fitness, todos, reminders] = await Promise.all([
+    const [allowe, fitness, todos, reminders, lesson] = await Promise.all([
       getAlloweSnapshot(),
       getLogForDate(todayInPhnomPenh()),
       getTodos("today"),
       listPendingReminders(),
+      getTodaysLessonWord(),
     ]);
     return {
       kind: "owner" as const,
+      wordOfTheDay: lesson
+        ? {
+            word: lesson.word,
+            definition: lesson.definition,
+            pronounciationRegion: lesson.pronounciationRegion,
+            pronounciation: lesson.pronounciation,
+            hasAudio: lesson.hasAudio,
+          }
+        : null,
       allowe,
       fitness,
       todayTodos: {

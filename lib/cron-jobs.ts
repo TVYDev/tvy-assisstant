@@ -28,6 +28,7 @@ import {
 } from "./reminders";
 import { and, eq, sql } from "drizzle-orm";
 import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
+import { getTodaysLessonWord } from "./daily-word";
 import { getDb } from "./db";
 import { words } from "./db/schema";
 import type { CronJobResult } from "./cron-job-result";
@@ -188,6 +189,7 @@ export async function runWordOfTheDayCron(
       definition: entry.definition,
       pronounciationRegion: entry.pronounciationRegion,
       pronounciation: entry.pronounciation,
+      pronounciationAudio: entry.audio,
     });
   }
 
@@ -203,17 +205,7 @@ export async function runRandomWordCron(
     return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
   }
 
-  const db = getDb();
-  const [entry] = await db
-    .select({
-      word: words.word,
-      definition: words.definition,
-      pronounciationRegion: words.pronounciationRegion,
-      pronounciation: words.pronounciation,
-    })
-    .from(words)
-    .orderBy(sql`RANDOM()`)
-    .limit(1);
+  const entry = await getTodaysLessonWord();
 
   if (!entry) {
     return { ok: true, dryRun, skipped: true, reason: "no_words" };
@@ -222,9 +214,17 @@ export async function runRandomWordCron(
   const summary = formatWordSummary(entry);
   if (!dryRun) {
     const api = await getBotApi();
-    await api.sendMessage(ownerId, formatWordLesson(entry), {
-      parse_mode: "HTML",
-    });
+    const lesson = formatWordLesson({ ...entry, audioUrl: null, audio: null });
+    if (entry.pronounciationAudio && entry.pronounciationAudio.length > 0) {
+      const filename = `${entry.word.replace(/[^\w.-]+/g, "_")}.mp3`;
+      await api.sendAudio(
+        ownerId,
+        new InputFile(entry.pronounciationAudio, filename),
+        { caption: lesson, parse_mode: "HTML", title: entry.word },
+      );
+    } else {
+      await api.sendMessage(ownerId, lesson, { parse_mode: "HTML" });
+    }
   }
 
   return { ok: true, dryRun, skipped: false, summary, chatId: ownerId };
