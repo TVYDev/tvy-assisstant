@@ -28,7 +28,7 @@ import {
 } from "./reminders";
 import { and, eq, sql } from "drizzle-orm";
 import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
-import { getTodaysLessonWord } from "./daily-word";
+import { pickRandomLessonWord } from "./daily-word";
 import { lessonChatIds, getWordRecipients } from "./word-recipients";
 import { getDb } from "./db";
 import { words } from "./db/schema";
@@ -206,7 +206,7 @@ export async function runRandomWordCron(
     return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
   }
 
-  const entry = await getTodaysLessonWord();
+  const entry = await pickRandomLessonWord();
 
   if (!entry) {
     return { ok: true, dryRun, skipped: true, reason: "no_words" };

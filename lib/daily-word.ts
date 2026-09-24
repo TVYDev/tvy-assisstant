@@ -54,17 +54,9 @@ async function loadWord(id: number): Promise<DailyWordLesson | null> {
   return row ?? null;
 }
 
-/** The word the 08:19 lesson will send. Chosen once per Phnom Penh day. */
-export async function getTodaysLessonWord(): Promise<DailyWordLesson | null> {
-  const today = todayInPhnomPenh();
-  const stored = parsePick(await getConfigOptional(DAILY_WORD_KEY));
-  if (stored?.date === today) {
-    const existing = await loadWord(stored.id);
-    if (existing) return existing;
-  }
-
-  const db = getDb();
-  const [picked] = await db
+/** A random row from the whole words table. Saved so the home page can show what was sent today. */
+export async function pickRandomLessonWord(): Promise<DailyWordLesson | null> {
+  const [picked] = await getDb()
     .select(wordColumns())
     .from(words)
     .orderBy(sql`RANDOM()`)
@@ -73,7 +65,14 @@ export async function getTodaysLessonWord(): Promise<DailyWordLesson | null> {
 
   await setConfig(
     DAILY_WORD_KEY,
-    JSON.stringify({ date: today, id: picked.id } satisfies StoredPick),
+    JSON.stringify({ date: todayInPhnomPenh(), id: picked.id } satisfies StoredPick),
   );
   return picked;
+}
+
+/** The lesson already chosen today. Opening the home page does not pick a new word. */
+export async function getStoredLessonWord(): Promise<DailyWordLesson | null> {
+  const stored = parsePick(await getConfigOptional(DAILY_WORD_KEY));
+  if (stored?.date !== todayInPhnomPenh()) return null;
+  return loadWord(stored.id);
 }
