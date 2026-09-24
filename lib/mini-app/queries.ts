@@ -1,5 +1,5 @@
 import { version } from "../../package.json";
-import { getTodaysLessonWord } from "../daily-word";
+import { getStoredLessonWord } from "../daily-word";
 import { getWordRecipients } from "../word-recipients";
 import { getCommandFollowupStickerConfig } from "../command-followup-stickers";
 import {
@@ -61,7 +61,7 @@ export async function getHomePayload(session: MiniAppSession) {
       getLogForDate(todayInPhnomPenh()),
       getTodos("today"),
       listPendingReminders(),
-      getTodaysLessonWord(),
+      getStoredLessonWord(),
     ]);
     return {
       kind: "owner" as const,

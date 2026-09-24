@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getTodaysLessonWord } from "@/lib/daily-word";
+import { getStoredLessonWord } from "@/lib/daily-word";
 import { jsonError, ownerSessionFromRequest } from "@/lib/mini-app/http";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     await ownerSessionFromRequest(request);
-    const lesson = await getTodaysLessonWord();
+    const lesson = await getStoredLessonWord();
     const audio = lesson?.pronounciationAudio;
     if (!audio || audio.length === 0) {
       return NextResponse.json({ error: "No pronunciation audio" }, { status: 404 });
