@@ -16,7 +16,7 @@ import {
   customType,
 } from "drizzle-orm/pg-core";
 
-const bytea = customType<{ data: Buffer; driverData: string }>({
+const bytea = customType<{ data: Buffer; driverData: string | Uint8Array }>({
   dataType() {
     return "bytea";
   },
@@ -24,10 +24,8 @@ const bytea = customType<{ data: Buffer; driverData: string }>({
     return `\\x${value.toString("hex")}`;
   },
   fromDriver(value) {
-    if (Buffer.isBuffer(value)) return value;
-    if (value instanceof Uint8Array) return Buffer.from(value);
-    const hex = String(value).replace(/^\\x/, "");
-    return Buffer.from(hex, "hex");
+    if (typeof value !== "string") return Buffer.from(value);
+    return Buffer.from(value.replace(/^\\x/, ""), "hex");
   },
 });
 
