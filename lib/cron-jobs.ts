@@ -29,6 +29,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
 import { getTodaysLessonWord } from "./daily-word";
+import { lessonChatIds, getWordRecipients } from "./word-recipients";
 import { getDb } from "./db";
 import { words } from "./db/schema";
 import type { CronJobResult } from "./cron-job-result";
@@ -212,22 +213,51 @@ export async function runRandomWordCron(
   }
 
   const summary = formatWordSummary(entry);
+  const chatIds = lessonChatIds(
+    process.env.OWNER_TELEGRAM_ID,
+    await getWordRecipients(),
+  );
+  if (chatIds.length === 0) {
+    return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
+  }
+
   if (!dryRun) {
     const api = await getBotApi();
     const lesson = formatWordLesson({ ...entry, audioUrl: null, audio: null });
-    if (entry.pronounciationAudio && entry.pronounciationAudio.length > 0) {
-      const filename = `${entry.word.replace(/[^\w.-]+/g, "_")}.mp3`;
-      await api.sendAudio(
-        ownerId,
-        new InputFile(entry.pronounciationAudio, filename),
-        { caption: lesson, parse_mode: "HTML", title: entry.word },
-      );
-    } else {
-      await api.sendMessage(ownerId, lesson, { parse_mode: "HTML" });
+    const filename = `${entry.word.replace(/[^\w.-]+/g, "_")}.mp3`;
+    const failures: string[] = [];
+    for (const chatId of chatIds) {
+      try {
+        if (entry.pronounciationAudio && entry.pronounciationAudio.length > 0) {
+          await api.sendAudio(chatId, new InputFile(entry.pronounciationAudio, filename), {
+            caption: lesson,
+            parse_mode: "HTML",
+            title: entry.word,
+          });
+        } else {
+          await api.sendMessage(chatId, lesson, { parse_mode: "HTML" });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "send failed";
+        failures.push(`${chatId}: ${message}`);
+      }
     }
+    if (failures.length === chatIds.length) {
+      return { ok: false, error: failures.join("; ") };
+    }
+    const sentSummary = failures.length
+      ? `${summary}\nSent to ${chatIds.length - failures.length} of ${chatIds.length}`
+      : summary;
+    return {
+      ok: true,
+      dryRun,
+      skipped: false,
+      summary: sentSummary,
+      chatId: chatIds.join(", "),
+    };
   }
 
-  return { ok: true, dryRun, skipped: false, summary, chatId: ownerId };
+  return { ok: true, dryRun, skipped: false, summary, chatId: chatIds.join(", ") };
 }
 
 export async function runReminderCron(

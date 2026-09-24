@@ -56,6 +56,11 @@ import {
   updateTelegramUserField,
 } from "../youtube-subscription";
 import { MiniAppError } from "./errors";
+import {
+  addWordGroup,
+  removeWordGroup,
+  toggleWordRecipientUser,
+} from "../word-recipients";
 
 export type SettleInput = {
   mode: PaymentSettlementMode;
@@ -406,6 +411,22 @@ export async function ownerUpdateSticker(input: {
   const command = parseConfigurableCommandKey(input.command);
   if (!command) throw new MiniAppError("Unknown command.");
   await updateCommandFollowupStickerRule(command, input.patch);
+}
+
+export async function ownerToggleWordUser(userId: number): Promise<void> {
+  await toggleWordRecipientUser(userId);
+}
+
+export async function ownerAddWordGroup(chatId: string): Promise<void> {
+  try {
+    await addWordGroup(chatId);
+  } catch (error) {
+    throw new MiniAppError(error instanceof Error ? error.message : "Invalid chat id.");
+  }
+}
+
+export async function ownerRemoveWordGroup(chatId: string): Promise<void> {
+  await removeWordGroup(chatId);
 }
 
 export async function ownerRunCron(

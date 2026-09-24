@@ -77,7 +77,7 @@ export const OWNER_MENU_CRONS_TEXT =
   "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
   "⏰ <b>Due reminders</b> — daily 09:00 (UTC+7)\n" +
   "📖 <b>Word of the day</b> — daily 06:00 (UTC+7)\n" +
-  "🎲 <b>Random word</b> — daily 08:19 (UTC+7)\n\n" +
+  "🎲 <b>Random word</b> — daily 08:19 (UTC+7), owner only until you add recipients\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
 export const OWNER_MENU_HELP_TEXT =
@@ -290,6 +290,7 @@ const OWNER_COMMANDS = [
   { command: "canceltask", description: "Cancel the add-todo/reminder wizard" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
+  { command: "wordgroup", description: "Add or remove a word-lesson chat" },
 ] as const;
 
 export function ownerMainMenuKeyboard(): InlineKeyboard {
@@ -405,7 +406,25 @@ export function ownerCronsMenuKeyboard(): InlineKeyboard {
     .text("📖 Word of the day", "om:run:cron:word")
     .text("🎲 Random word", "om:run:cron:random-word")
     .row()
+    .text("👥 Word recipients", "om:wordto")
+    .row()
     .text("« Main menu", "om:main");
+}
+
+export function ownerWordRecipientsKeyboard(input: {
+  users: Array<{ id: number; label: string; selected: boolean }>;
+  groupIds: string[];
+}): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  for (const user of input.users) {
+    keyboard
+      .text(`${user.selected ? "✅" : "➕"} ${user.label}`, `om:wordto:u:${user.id}`)
+      .row();
+  }
+  for (const groupId of input.groupIds) {
+    keyboard.text(`✕ ${groupId}`, `om:wordto:g:${groupId}`).row();
+  }
+  return keyboard.text("« Crons", "om:cron");
 }
 
 export function ownerBackMenuKeyboard(): InlineKeyboard {

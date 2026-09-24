@@ -193,6 +193,18 @@ export async function updateStickerAction(
   return runOwner(initData, () => mutations.ownerUpdateSticker(input));
 }
 
+export async function toggleWordUserAction(initData: string, userId: number) {
+  return runOwner(initData, () => mutations.ownerToggleWordUser(userId));
+}
+
+export async function addWordGroupAction(initData: string, chatId: string) {
+  return runOwner(initData, () => mutations.ownerAddWordGroup(chatId));
+}
+
+export async function removeWordGroupAction(initData: string, chatId: string) {
+  return runOwner(initData, () => mutations.ownerRemoveWordGroup(chatId));
+}
+
 export async function runCronAction(
   initData: string,
   job: "youtube" | "fitness" | "gym" | "reminders" | "word" | "random-word",

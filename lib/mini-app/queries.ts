@@ -1,5 +1,6 @@
 import { version } from "../../package.json";
 import { getTodaysLessonWord } from "../daily-word";
+import { getWordRecipients } from "../word-recipients";
 import { getCommandFollowupStickerConfig } from "../command-followup-stickers";
 import {
   getDebtByShortcode,
@@ -203,12 +204,14 @@ export async function getMorePayload(): Promise<{
   currentFee: number;
   stickers: Awaited<ReturnType<typeof getCommandFollowupStickerConfig>>;
   shortcodes: string[];
+  wordRecipients: Awaited<ReturnType<typeof getWordRecipients>>;
 }> {
-  const [users, fees, stickers, shortcodes] = await Promise.all([
+  const [users, fees, stickers, shortcodes, wordRecipients] = await Promise.all([
     getAllTelegramUsers(),
     getYoutubeFeeSchedules(),
     getCommandFollowupStickerConfig(),
     getKnownShortcodes(),
+    getWordRecipients(),
   ]);
   let currentFee = 0;
   try {
@@ -216,7 +219,7 @@ export async function getMorePayload(): Promise<{
   } catch {
     currentFee = 0;
   }
-  return { users, fees, currentFee, stickers, shortcodes };
+  return { users, fees, currentFee, stickers, shortcodes, wordRecipients };
 }
 
 export type { TodoRecord };
