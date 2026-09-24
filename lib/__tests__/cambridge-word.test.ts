@@ -8,6 +8,7 @@ const fixture = `
 </p>
 <div class="hdib">
     <span class="region dreg">UK</span>
+    <source type="audio/mpeg" src="/media/english/uk_pron/u/uke/ukepi/ukepito028.mp3"/>
     <span class="ipa dipa lpr-2 lpl-1">/ˈek.wɪ.nɒks/</span>
 </div>
 <div class="hdib">
@@ -26,6 +27,9 @@ describe("parseCambridgeWordOfTheDay", () => {
       definition: "either of the two occasions in the year when day & night are equal",
       pronounciationRegion: "UK",
       pronounciation: "/ˈek.wɪ.nɒks/",
+      audioUrl:
+        "https://dictionary.cambridge.org/media/english/uk_pron/u/uke/ukepi/ukepito028.mp3",
+      audio: null,
     });
   });
 
@@ -41,6 +45,8 @@ describe("formatWordLesson", () => {
       definition: "fish & chips",
       pronounciationRegion: "UK",
       pronounciation: "/eɪ/",
+      audioUrl: null,
+      audio: null,
     });
     expect(text).toContain("<b>a &lt; b</b>");
     expect(text).toContain("UK /eɪ/");

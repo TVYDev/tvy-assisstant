@@ -1,11 +1,13 @@
-const WORD_OF_THE_DAY_URL =
-  "https://dictionary.cambridge.org/dictionary/english/a";
+const CAMBRIDGE_ORIGIN = "https://dictionary.cambridge.org";
+const WORD_OF_THE_DAY_URL = `${CAMBRIDGE_ORIGIN}/dictionary/english/a`;
 
 export interface CambridgeWordOfTheDay {
   word: string;
   definition: string;
   pronounciationRegion: string | null;
   pronounciation: string | null;
+  audioUrl: string | null;
+  audio: Buffer | null;
 }
 
 function escapeHtml(value: string): string {
@@ -52,13 +54,33 @@ export function parseCambridgeWordOfTheDay(
 
   const regionMatch = block.match(/class="region[^"]*">([^<]+)</);
   const ipaMatch = block.match(/class="ipa[^"]*">([^<]+)</);
+  const audioMatch = block.match(
+    /<source[^>]*type="audio\/mpeg"[^>]*src="([^"]+)"/,
+  );
 
   return {
     word: decodeHtml(wordMatch[1]),
     definition: decodeHtml(definitionMatch[1]),
     pronounciationRegion: regionMatch ? decodeHtml(regionMatch[1]) : null,
     pronounciation: ipaMatch ? decodeHtml(ipaMatch[1]) : null,
+    audioUrl: audioMatch ? new URL(audioMatch[1], CAMBRIDGE_ORIGIN).href : null,
+    audio: null,
   };
+}
+
+async function fetchPronunciationAudio(audioUrl: string): Promise<Buffer | null> {
+  const response = await fetch(audioUrl, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; tvy-assistant/1.0; +https://dictionary.cambridge.org)",
+      Referer: WORD_OF_THE_DAY_URL,
+      Accept: "audio/mpeg",
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return bytes.length > 0 ? bytes : null;
 }
 
 export async function fetchCambridgeWordOfTheDay(): Promise<CambridgeWordOfTheDay> {
@@ -81,6 +103,9 @@ export async function fetchCambridgeWordOfTheDay(): Promise<CambridgeWordOfTheDa
   const parsed = parseCambridgeWordOfTheDay(await response.text());
   if (!parsed) {
     throw new Error("Cambridge word of the day markup was not found.");
+  }
+  if (parsed.audioUrl) {
+    parsed.audio = await fetchPronunciationAudio(parsed.audioUrl);
   }
   return parsed;
 }

@@ -12,6 +12,7 @@ import {
   toggleAllYouTubeMonthsPaid,
   getTelegramUsernameByShortcode,
   updateTelegramUserField,
+  getAllTelegramUsers,
 } from "./youtube-subscription";
 import {
   buildOweMessage,
@@ -95,9 +96,16 @@ import {
   splitTelegramText,
   ownerFitMenuKeyboard,
   ownerCronsMenuKeyboard,
+  ownerWordRecipientsKeyboard,
   ownerTodosMenuKeyboard,
   OWNER_MENU_TODOS_TEXT,
 } from "./owner-menu";
+import {
+  addWordGroup,
+  getWordRecipients,
+  removeWordGroup,
+  toggleWordRecipientUser,
+} from "./word-recipients";
 import {
   formatCronJobReply,
   runFitnessReminderCron,
@@ -549,6 +557,19 @@ bot.command(
     "hello_dino",
   ],
   async (ctx) => {
+    if (ctx.from) {
+      try {
+        await upsertTelegramUser({
+          telegram_user_id: ctx.from.id,
+          telegram_username: ctx.from.username,
+          first_name: ctx.from.first_name,
+          last_name: ctx.from.last_name,
+        });
+      } catch (error) {
+        console.error("Failed to save telegram user on start:", error);
+      }
+    }
+
     await ctx.reply(
       "👋 Hey hey! I'm Dino 🦕 (aka Nailong) — the round-bellied, silly-faced dino you never knew you needed!\n" +
         "Vannyou's loyal little assistant, doing his dirty work so he doesn't have to. 😂\n" +
@@ -1267,6 +1288,42 @@ bot.command("menu", async (ctx) => {
   });
 });
 
+async function wordRecipientsView() {
+  const [users, recipients] = await Promise.all([
+    getAllTelegramUsers(),
+    getWordRecipients(),
+  ]);
+  const choices = users.flatMap((user) => {
+    if (!user.telegram_user_id || user.telegram_user_id === OWNER_ID) return [];
+    const name = user.telegram_username ? `@${user.telegram_username}` : user.first_name;
+    const label = (user.shortcode ? `${user.shortcode} ${name}` : name).slice(0, 40);
+    return [
+      {
+        id: user.telegram_user_id,
+        label,
+        selected: recipients.userIds.includes(user.telegram_user_id),
+      },
+    ];
+  });
+  const groups = recipients.groupIds.length
+    ? recipients.groupIds.map((id) => `<code>${id}</code>`).join(", ")
+    : "none";
+  const text =
+    "🎲 <b>Word lesson recipients</b>\n\n" +
+    "You always receive the 08:19 lesson.\n" +
+    "Tap a saved user to add or remove them.\n" +
+    `Extra chats: ${groups}\n\n` +
+    "<code>/wordgroup -1001234567890</code> — add a group or chat\n" +
+    "<code>/wordgroup remove -1001234567890</code> — remove it";
+  return {
+    text,
+    keyboard: ownerWordRecipientsKeyboard({
+      users: choices,
+      groupIds: recipients.groupIds,
+    }),
+  };
+}
+
 bot.callbackQuery(/^om:/, async (ctx) => {
   if (!isOwner(ctx)) {
     await ctx.answerCallbackQuery({ text: "Boss only!", show_alert: true });
@@ -1294,6 +1351,17 @@ bot.callbackQuery(/^om:/, async (ctx) => {
       await ctx.reply(text, { parse_mode: "HTML", reply_markup: keyboard });
     }
   };
+
+  if (data === "om:wordto" || data.startsWith("om:wordto:")) {
+    if (data.startsWith("om:wordto:u:")) {
+      await toggleWordRecipientUser(Number(data.slice("om:wordto:u:".length)));
+    } else if (data.startsWith("om:wordto:g:")) {
+      await removeWordGroup(data.slice("om:wordto:g:".length));
+    }
+    const view = await wordRecipientsView();
+    await editSection(view.text, view.keyboard);
+    return;
+  }
 
   switch (data) {
     case "om:main":
@@ -1735,6 +1803,32 @@ bot.command("fithistory", async (ctx) => {
 
   const logs = await getLogHistory(weeks);
   return ctx.reply(formatLogHistory(logs, weeks), { parse_mode: "HTML" });
+});
+
+bot.command("wordgroup", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const arg = ctx.match?.trim() ?? "";
+  const remove = arg.toLowerCase().startsWith("remove ");
+  const raw = remove ? arg.slice("remove ".length).trim() : arg;
+  if (!raw) {
+    const view = await wordRecipientsView();
+    return ctx.reply(view.text, { parse_mode: "HTML" });
+  }
+
+  try {
+    if (remove) await removeWordGroup(raw);
+    else await addWordGroup(raw);
+  } catch (error) {
+    return ctx.reply(error instanceof Error ? error.message : "Could not update recipients.");
+  }
+
+  const view = await wordRecipientsView();
+  return ctx.reply(remove ? `Removed ${raw}.\n\n${view.text}` : `Added ${raw}.\n\n${view.text}`, {
+    parse_mode: "HTML",
+  });
 });
 
 bot.command("gymreminder", async (ctx) => {

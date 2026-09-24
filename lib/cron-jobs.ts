@@ -28,6 +28,8 @@ import {
 } from "./reminders";
 import { and, eq, sql } from "drizzle-orm";
 import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
+import { getTodaysLessonWord } from "./daily-word";
+import { lessonChatIds, getWordRecipients } from "./word-recipients";
 import { getDb } from "./db";
 import { words } from "./db/schema";
 import type { CronJobResult } from "./cron-job-result";
@@ -188,6 +190,7 @@ export async function runWordOfTheDayCron(
       definition: entry.definition,
       pronounciationRegion: entry.pronounciationRegion,
       pronounciation: entry.pronounciation,
+      pronounciationAudio: entry.audio,
     });
   }
 
@@ -203,31 +206,58 @@ export async function runRandomWordCron(
     return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
   }
 
-  const db = getDb();
-  const [entry] = await db
-    .select({
-      word: words.word,
-      definition: words.definition,
-      pronounciationRegion: words.pronounciationRegion,
-      pronounciation: words.pronounciation,
-    })
-    .from(words)
-    .orderBy(sql`RANDOM()`)
-    .limit(1);
+  const entry = await getTodaysLessonWord();
 
   if (!entry) {
     return { ok: true, dryRun, skipped: true, reason: "no_words" };
   }
 
   const summary = formatWordSummary(entry);
-  if (!dryRun) {
-    const api = await getBotApi();
-    await api.sendMessage(ownerId, formatWordLesson(entry), {
-      parse_mode: "HTML",
-    });
+  const chatIds = lessonChatIds(
+    process.env.OWNER_TELEGRAM_ID,
+    await getWordRecipients(),
+  );
+  if (chatIds.length === 0) {
+    return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
   }
 
-  return { ok: true, dryRun, skipped: false, summary, chatId: ownerId };
+  if (!dryRun) {
+    const api = await getBotApi();
+    const lesson = formatWordLesson({ ...entry, audioUrl: null, audio: null });
+    const filename = `${entry.word.replace(/[^\w.-]+/g, "_")}.mp3`;
+    const failures: string[] = [];
+    for (const chatId of chatIds) {
+      try {
+        if (entry.pronounciationAudio && entry.pronounciationAudio.length > 0) {
+          await api.sendAudio(chatId, new InputFile(entry.pronounciationAudio, filename), {
+            caption: lesson,
+            parse_mode: "HTML",
+            title: entry.word,
+          });
+        } else {
+          await api.sendMessage(chatId, lesson, { parse_mode: "HTML" });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "send failed";
+        failures.push(`${chatId}: ${message}`);
+      }
+    }
+    if (failures.length === chatIds.length) {
+      return { ok: false, error: failures.join("; ") };
+    }
+    const sentSummary = failures.length
+      ? `${summary}\nSent to ${chatIds.length - failures.length} of ${chatIds.length}`
+      : summary;
+    return {
+      ok: true,
+      dryRun,
+      skipped: false,
+      summary: sentSummary,
+      chatId: chatIds.join(", "),
+    };
+  }
+
+  return { ok: true, dryRun, skipped: false, summary, chatId: chatIds.join(", ") };
 }
 
 export async function runReminderCron(

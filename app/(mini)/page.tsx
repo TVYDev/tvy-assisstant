@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { cancelTodoAction, setTodoDoneAction } from "@/app/actions/mini";
+import { miniGetBlob } from "@/components/mini/api";
 import { SnapshotCards } from "@/components/mini/snapshot-cards";
 import { Money } from "@/components/mini/money";
 import { TodoItem } from "@/components/mini/todo-item";
@@ -125,6 +126,22 @@ function OwnerHome({
     <>
       {error ? <ErrorBanner message={error} /> : null}
 
+      {data.wordOfTheDay ? (
+        <section className="mb-5 rounded-2xl bg-base-200 px-4 py-3">
+          <p className="text-xs text-base-content/50">Word of the day · 08:19</p>
+          <p className="text-xl font-semibold">{data.wordOfTheDay.word}</p>
+          {data.wordOfTheDay.pronounciationRegion || data.wordOfTheDay.pronounciation ? (
+            <p className="text-sm text-base-content/60">
+              {[data.wordOfTheDay.pronounciationRegion, data.wordOfTheDay.pronounciation]
+                .filter(Boolean)
+                .join(" ")}
+            </p>
+          ) : null}
+          <p className="mt-1 text-sm">{data.wordOfTheDay.definition}</p>
+          {data.wordOfTheDay.hasAudio ? <WordAudio initData={initData} /> : null}
+        </section>
+      ) : null}
+
       <section className="mb-5">
         <Link href="/tasks" className="mb-1 flex items-end justify-between gap-3">
           <h1 className="text-[1.75rem] font-semibold leading-none tracking-tight">
@@ -224,4 +241,29 @@ function OwnerHome({
       ) : null}
     </>
   );
+}
+
+function WordAudio({ initData }: { initData: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    void miniGetBlob("/api/mini/word-audio", initData)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(null);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [initData]);
+
+  if (!src) return null;
+  return <audio controls preload="none" src={src} className="mt-3 h-9 w-full" />;
 }

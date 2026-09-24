@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   addFeeAction,
+  addWordGroupAction,
+  removeWordGroupAction,
   runCronAction,
+  toggleWordUserAction,
   updateStickerAction,
   updateUserAction,
 } from "@/app/actions/mini";
@@ -39,6 +42,7 @@ export default function MorePage() {
   >(
     null,
   );
+  const [groupId, setGroupId] = useState("");
 
   async function run(
     action: () => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>,
@@ -227,6 +231,78 @@ export default function MorePage() {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="card bg-base-100 border border-base-300">
+            <div className="card-body py-4">
+              <h2 className="card-title text-base">Word lesson recipients</h2>
+              <p className="text-xs opacity-70">
+                The 08:19 lesson always goes to you. Add saved users or a group chat id.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {data.users
+                  .filter((user) => user.telegram_user_id && user.telegram_user_id !== session?.user.id)
+                  .map((user) => {
+                    const id = user.telegram_user_id!;
+                    const selected = data.wordRecipients.userIds.includes(id);
+                    const label = user.shortcode
+                      ? `${user.shortcode} · ${user.first_name}`
+                      : user.telegram_username
+                        ? `@${user.telegram_username}`
+                        : user.first_name;
+                    return (
+                      <li key={id}>
+                        <button
+                          type="button"
+                          className={`btn btn-sm w-full justify-start ${selected ? "btn-primary" : "btn-ghost"}`}
+                          onClick={() => void run(() => toggleWordUserAction(initData, id))}
+                        >
+                          {selected ? "Receives" : "Add"} · {label}
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+              <div className="join w-full">
+                <input
+                  className="input input-sm join-item w-full"
+                  placeholder="-1001234567890"
+                  value={groupId}
+                  onChange={(event) => setGroupId(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm join-item"
+                  onClick={() => {
+                    const id = groupId.trim();
+                    if (!id) return;
+                    void run(async () => {
+                      const result = await addWordGroupAction(initData, id);
+                      if (result.ok) setGroupId("");
+                      return result;
+                    }, "Chat added");
+                  }}
+                >
+                  Add chat
+                </button>
+              </div>
+              {data.wordRecipients.groupIds.length > 0 ? (
+                <ul className="text-sm">
+                  {data.wordRecipients.groupIds.map((id) => (
+                    <li key={id} className="flex items-center justify-between gap-2">
+                      <code>{id}</code>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost"
+                        onClick={() => void run(() => removeWordGroupAction(initData, id))}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </section>
 

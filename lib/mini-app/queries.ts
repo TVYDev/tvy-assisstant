@@ -1,4 +1,6 @@
 import { version } from "../../package.json";
+import { getTodaysLessonWord } from "../daily-word";
+import { getWordRecipients } from "../word-recipients";
 import { getCommandFollowupStickerConfig } from "../command-followup-stickers";
 import {
   getDebtByShortcode,
@@ -54,14 +56,24 @@ export function sessionPayload(session: MiniAppSession): SessionPayload {
 
 export async function getHomePayload(session: MiniAppSession) {
   if (session.isOwner) {
-    const [allowe, fitness, todos, reminders] = await Promise.all([
+    const [allowe, fitness, todos, reminders, lesson] = await Promise.all([
       getAlloweSnapshot(),
       getLogForDate(todayInPhnomPenh()),
       getTodos("today"),
       listPendingReminders(),
+      getTodaysLessonWord(),
     ]);
     return {
       kind: "owner" as const,
+      wordOfTheDay: lesson
+        ? {
+            word: lesson.word,
+            definition: lesson.definition,
+            pronounciationRegion: lesson.pronounciationRegion,
+            pronounciation: lesson.pronounciation,
+            hasAudio: lesson.hasAudio,
+          }
+        : null,
       allowe,
       fitness,
       todayTodos: {
@@ -192,12 +204,14 @@ export async function getMorePayload(): Promise<{
   currentFee: number;
   stickers: Awaited<ReturnType<typeof getCommandFollowupStickerConfig>>;
   shortcodes: string[];
+  wordRecipients: Awaited<ReturnType<typeof getWordRecipients>>;
 }> {
-  const [users, fees, stickers, shortcodes] = await Promise.all([
+  const [users, fees, stickers, shortcodes, wordRecipients] = await Promise.all([
     getAllTelegramUsers(),
     getYoutubeFeeSchedules(),
     getCommandFollowupStickerConfig(),
     getKnownShortcodes(),
+    getWordRecipients(),
   ]);
   let currentFee = 0;
   try {
@@ -205,7 +219,7 @@ export async function getMorePayload(): Promise<{
   } catch {
     currentFee = 0;
   }
-  return { users, fees, currentFee, stickers, shortcodes };
+  return { users, fees, currentFee, stickers, shortcodes, wordRecipients };
 }
 
 export type { TodoRecord };

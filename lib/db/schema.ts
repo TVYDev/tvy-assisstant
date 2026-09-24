@@ -13,7 +13,23 @@ import {
   timestamp,
   unique,
   varchar,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: string }>({
+  dataType() {
+    return "bytea";
+  },
+  toDriver(value) {
+    return `\\x${value.toString("hex")}`;
+  },
+  fromDriver(value) {
+    if (Buffer.isBuffer(value)) return value;
+    if (value instanceof Uint8Array) return Buffer.from(value);
+    const hex = String(value).replace(/^\\x/, "");
+    return Buffer.from(hex, "hex");
+  },
+});
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
@@ -202,6 +218,7 @@ export const words = pgTable("words", {
   definition: varchar("definition", { length: 500 }).notNull(),
   pronounciationRegion: varchar("pronounciation_region", { length: 50 }),
   pronounciation: varchar("pronounciation", { length: 250 }),
+  pronounciationAudio: bytea("pronounciation_audio"),
   createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
 });
 
