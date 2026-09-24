@@ -6,6 +6,7 @@ export interface CronJobResult {
   chatId?: string;
   logDate?: string;
   sentCount?: number;
+  summary?: string;
   error?: string;
 }
 
@@ -27,6 +28,10 @@ export function formatCronJobReply(
             ? "gym reminder is off — /gymreminder on"
             : result.reason === "none_due"
               ? "no reminders were due"
+              : result.reason === "already_saved"
+                ? "today's word is already saved"
+                : result.reason === "no_words"
+                  ? "no words saved yet"
             : (result.reason ?? "unknown");
     return `⏭ <b>${jobName}</b> skipped: ${reason}`;
   }
@@ -39,5 +44,6 @@ export function formatCronJobReply(
     result.sentCount !== undefined
       ? `\nSent ${result.sentCount} reminder${result.sentCount === 1 ? "" : "s"}`
       : "";
-  return `✅ <b>${jobName}</b> ran successfully.${target}${date}${sent}`;
+  const summary = result.summary ? `\n${result.summary}` : "";
+  return `✅ <b>${jobName}</b> ran successfully.${target}${date}${sent}${summary}`;
 }

@@ -34,7 +34,9 @@ export default function MorePage() {
   const [feeTo, setFeeTo] = useState("");
   const [previewCode, setPreviewCode] = useState("");
   const [preview, setPreview] = useState<OweSnapshot | null>(null);
-  const [cronJob, setCronJob] = useState<"youtube" | "fitness" | "gym" | "reminders" | null>(
+  const [cronJob, setCronJob] = useState<
+    "youtube" | "fitness" | "gym" | "reminders" | "word" | "random-word" | null
+  >(
     null,
   );
 
@@ -241,6 +243,8 @@ export default function MorePage() {
                     ["fitness", "Fitness reminder"],
                     ["gym", "Gym motivation"],
                     ["reminders", "Due reminders"],
+                    ["word", "Word of the day"],
+                    ["random-word", "Random word"],
                   ] as const
                 ).map(([job, label]) => (
                   <button
