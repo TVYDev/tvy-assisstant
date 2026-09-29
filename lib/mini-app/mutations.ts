@@ -59,6 +59,7 @@ import { MiniAppError } from "./errors";
 import {
   addWordGroup,
   removeWordGroup,
+  setWordLessonSentToOwner,
   toggleWordRecipientUser,
 } from "../word-recipients";
 
@@ -411,6 +412,11 @@ export async function ownerUpdateSticker(input: {
   const command = parseConfigurableCommandKey(input.command);
   if (!command) throw new MiniAppError("Unknown command.");
   await updateCommandFollowupStickerRule(command, input.patch);
+}
+
+export async function ownerSetWordSendToOwner(enabled: boolean): Promise<boolean> {
+  await setWordLessonSentToOwner(enabled);
+  return enabled;
 }
 
 export async function ownerToggleWordUser(userId: number): Promise<void> {

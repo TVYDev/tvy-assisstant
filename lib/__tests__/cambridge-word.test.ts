@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatWordLesson, parseCambridgeWordOfTheDay } from "../cambridge-word";
+import {
+  formatWordLesson,
+  formatWordOfTheDayReport,
+  parseCambridgeWordOfTheDay,
+} from "../cambridge-word";
 
 const fixture = `
 <p class="fs12 tcu lmb-0">Word of the Day</p>
@@ -38,8 +42,34 @@ describe("parseCambridgeWordOfTheDay", () => {
   });
 });
 
+describe("formatWordOfTheDayReport", () => {
+  const entry = {
+    word: "equinox",
+    definition: "when day & night are equal",
+    pronounciationRegion: "UK",
+    pronounciation: "/ˈek/",
+  };
+
+  it("reports a saved word", () => {
+    const text = formatWordOfTheDayReport({ ok: true, entry });
+    expect(text).toContain("✅ <b>Word of the day</b>\nSaved");
+    expect(text).toContain("equinox");
+    expect(text).toContain("day &amp; night");
+  });
+
+  it("reports a failure with no word", () => {
+    const text = formatWordOfTheDayReport({
+      ok: false,
+      error: "Cambridge returned <500>",
+    });
+    expect(text).toContain("❌ <b>Word of the day</b>\nFailed");
+    expect(text).toContain("Cambridge returned &lt;500&gt;");
+    expect(text).not.toContain("🔠");
+  });
+});
+
 describe("formatWordLesson", () => {
-  it("escapes HTML in the lesson sent to Telegram", () => {
+  it("formats the lesson with emoji sections and escapes HTML", () => {
     const text = formatWordLesson({
       word: "a < b",
       definition: "fish & chips",
@@ -48,8 +78,31 @@ describe("formatWordLesson", () => {
       audioUrl: null,
       audio: null,
     });
-    expect(text).toContain("<b>a &lt; b</b>");
-    expect(text).toContain("UK /eɪ/");
-    expect(text).toContain("fish &amp; chips");
+    expect(text).toBe(
+      [
+        "🔠",
+        "a &lt; b",
+        "",
+        "📣",
+        "UK · /eɪ/",
+        "",
+        "📋",
+        "fish &amp; chips",
+      ].join("\n"),
+    );
+  });
+
+  it("omits pronunciation when the word has none", () => {
+    const text = formatWordLesson({
+      word: "equinox",
+      definition: "when day and night are equal",
+      pronounciationRegion: null,
+      pronounciation: null,
+      audioUrl: null,
+      audio: null,
+    });
+    expect(text).toBe(
+      ["🔠", "equinox", "", "📋", "when day and night are equal"].join("\n"),
+    );
   });
 });

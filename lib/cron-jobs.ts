@@ -27,9 +27,17 @@ import {
   reminderDoneKeyboard,
 } from "./reminders";
 import { and, eq, sql } from "drizzle-orm";
-import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
+import {
+  fetchCambridgeWordOfTheDay,
+  formatWordLesson,
+  formatWordOfTheDayReport,
+} from "./cambridge-word";
 import { pickRandomLessonWord } from "./daily-word";
-import { lessonChatIds, getWordRecipients } from "./word-recipients";
+import {
+  lessonChatIds,
+  getWordRecipients,
+  isWordLessonSentToOwner,
+} from "./word-recipients";
 import { getDb } from "./db";
 import { words } from "./db/schema";
 import type { CronJobResult } from "./cron-job-result";
@@ -161,40 +169,134 @@ function formatWordSummary(entry: {
   return `${entry.word}${pronunciation} — ${entry.definition}`;
 }
 
+async function sendWordOfTheDayReport(text: string): Promise<string | null> {
+  const ownerId = process.env.OWNER_TELEGRAM_ID;
+  if (!ownerId) return "OWNER_TELEGRAM_ID is not set";
+  try {
+    const api = await getBotApi();
+    await api.sendMessage(ownerId, text, { parse_mode: "HTML" });
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Failed to message you";
+  }
+}
+
+function withReportError(message: string, reportError: string | null): string {
+  return reportError ? `${message} (could not message you: ${reportError})` : message;
+}
+
+export async function notifyOwnerWordOfTheDayFailure(message: string): Promise<void> {
+  await sendWordOfTheDayReport(formatWordOfTheDayReport({ ok: false, error: message }));
+}
+
 export async function runWordOfTheDayCron(
   options: { dryRun?: boolean } = {},
 ): Promise<CronJobResult> {
   const dryRun = options.dryRun ?? false;
-  const entry = await fetchCambridgeWordOfTheDay();
+  const ownerId = process.env.OWNER_TELEGRAM_ID;
+
+  let entry;
+  try {
+    entry = await fetchCambridgeWordOfTheDay();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const reportError = dryRun
+      ? null
+      : await sendWordOfTheDayReport(
+          formatWordOfTheDayReport({ ok: false, error: message }),
+        );
+    return {
+      ok: false,
+      dryRun,
+      error: withReportError(message, reportError),
+      chatId: ownerId,
+    };
+  }
+
   const summary = formatWordSummary(entry);
 
+  let existing: { id: number } | undefined;
+  try {
+    const db = getDb();
+    [existing] = await db
+      .select({ id: words.id })
+      .from(words)
+      .where(
+        and(
+          eq(words.word, entry.word),
+          sql`((${words.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Phnom_Penh')::date = (NOW() AT TIME ZONE 'Asia/Phnom_Penh')::date`,
+        ),
+      )
+      .limit(1);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const reportError = dryRun
+      ? null
+      : await sendWordOfTheDayReport(
+          formatWordOfTheDayReport({ ok: false, entry, error: message }),
+        );
+    return {
+      ok: false,
+      dryRun,
+      error: withReportError(message, reportError),
+      summary,
+      chatId: ownerId,
+    };
+  }
+
   const db = getDb();
-  const [existing] = await db
-    .select({ id: words.id })
-    .from(words)
-    .where(
-      and(
-        eq(words.word, entry.word),
-        sql`((${words.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Phnom_Penh')::date = (NOW() AT TIME ZONE 'Asia/Phnom_Penh')::date`,
-      ),
-    )
-    .limit(1);
 
   if (existing) {
-    return { ok: true, dryRun, skipped: true, reason: "already_saved", summary };
+    const reportError = dryRun
+      ? null
+      : await sendWordOfTheDayReport(
+          formatWordOfTheDayReport({ ok: true, skipped: true, entry }),
+        );
+    if (reportError) {
+      return { ok: false, dryRun, error: reportError, summary, chatId: ownerId };
+    }
+    return {
+      ok: true,
+      dryRun,
+      skipped: true,
+      reason: "already_saved",
+      summary,
+      chatId: ownerId,
+    };
   }
 
   if (!dryRun) {
-    await db.insert(words).values({
-      word: entry.word,
-      definition: entry.definition,
-      pronounciationRegion: entry.pronounciationRegion,
-      pronounciation: entry.pronounciation,
-      pronounciationAudio: entry.audio,
-    });
+    try {
+      await db.insert(words).values({
+        word: entry.word,
+        definition: entry.definition,
+        pronounciationRegion: entry.pronounciationRegion,
+        pronounciation: entry.pronounciation,
+        pronounciationAudio: entry.audio,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const reportError = await sendWordOfTheDayReport(
+        formatWordOfTheDayReport({ ok: false, entry, error: message }),
+      );
+      return {
+        ok: false,
+        dryRun,
+        error: withReportError(message, reportError),
+        summary,
+        chatId: ownerId,
+      };
+    }
+
+    const reportError = await sendWordOfTheDayReport(
+      formatWordOfTheDayReport({ ok: true, entry }),
+    );
+    if (reportError) {
+      return { ok: false, dryRun, error: reportError, summary, chatId: ownerId };
+    }
   }
 
-  return { ok: true, dryRun, skipped: false, summary };
+  return { ok: true, dryRun, skipped: false, summary, chatId: ownerId };
 }
 
 export async function runRandomWordCron(
@@ -214,11 +316,12 @@ export async function runRandomWordCron(
 
   const summary = formatWordSummary(entry);
   const chatIds = lessonChatIds(
-    process.env.OWNER_TELEGRAM_ID,
+    ownerId,
     await getWordRecipients(),
+    await isWordLessonSentToOwner(),
   );
   if (chatIds.length === 0) {
-    return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
+    return { ok: true, dryRun, skipped: true, reason: "owner_off", summary };
   }
 
   if (!dryRun) {

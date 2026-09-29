@@ -76,8 +76,8 @@ export const OWNER_MENU_CRONS_TEXT =
   "🌅 <b>Fitness reminder</b> — daily 07:50 (UTC+7)\n" +
   "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
   "⏰ <b>Due reminders</b> — daily 09:00 (UTC+7)\n" +
-  "📖 <b>Word of the day</b> — daily 06:00 (UTC+7)\n" +
-  "🎲 <b>Random word</b> — daily 08:19 (UTC+7), owner only until you add recipients\n\n" +
+  "📖 <b>Word of the day</b> — daily 06:00 (UTC+7), result DM to you\n" +
+  "🎲 <b>Random word</b> — daily 08:19 (UTC+7). You receive it until <code>/wordme off</code>\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
 export const OWNER_MENU_HELP_TEXT =
@@ -231,7 +231,15 @@ export const OWNER_HELP_TEXT =
   "  /reminders\n" +
   "  /cancelremind <id>\n" +
   "  /canceltask\n" +
-  "    → Cancel the add wizard";
+  "    → Cancel the add wizard\n" +
+  "\n" +
+  "🎲 Word lesson:\n" +
+  "  /wordme [on|off]\n" +
+  "    → Send the 08:19 random word to yourself (default on)\n" +
+  "  /wordgroup <chat id>\n" +
+  "    → Add a group or chat, e.g. /wordgroup -1001234567890\n" +
+  "  /wordgroup remove <chat id>\n" +
+  "    → Remove that chat";
 
 export function splitTelegramText(
   text: string,
@@ -290,6 +298,7 @@ const OWNER_COMMANDS = [
   { command: "canceltask", description: "Cancel the add-todo/reminder wizard" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
+  { command: "wordme", description: "Toggle random word DM to yourself" },
   { command: "wordgroup", description: "Add or remove a word-lesson chat" },
 ] as const;
 
@@ -414,8 +423,12 @@ export function ownerCronsMenuKeyboard(): InlineKeyboard {
 export function ownerWordRecipientsKeyboard(input: {
   users: Array<{ id: number; label: string; selected: boolean }>;
   groupIds: string[];
+  sendToOwner: boolean;
 }): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
+  const keyboard = new InlineKeyboard().text(
+    input.sendToOwner ? "🔕 Stop sending to me" : "✅ Send to me",
+    "om:wordto:me",
+  ).row();
   for (const user of input.users) {
     keyboard
       .text(`${user.selected ? "✅" : "➕"} ${user.label}`, `om:wordto:u:${user.id}`)

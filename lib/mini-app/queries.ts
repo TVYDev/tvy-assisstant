@@ -1,6 +1,6 @@
 import { version } from "../../package.json";
 import { getStoredLessonWord } from "../daily-word";
-import { getWordRecipients } from "../word-recipients";
+import { getWordRecipients, isWordLessonSentToOwner } from "../word-recipients";
 import { getCommandFollowupStickerConfig } from "../command-followup-stickers";
 import {
   getDebtByShortcode,
@@ -205,21 +205,24 @@ export async function getMorePayload(): Promise<{
   stickers: Awaited<ReturnType<typeof getCommandFollowupStickerConfig>>;
   shortcodes: string[];
   wordRecipients: Awaited<ReturnType<typeof getWordRecipients>>;
+  sendWordToOwner: boolean;
 }> {
-  const [users, fees, stickers, shortcodes, wordRecipients] = await Promise.all([
-    getAllTelegramUsers(),
-    getYoutubeFeeSchedules(),
-    getCommandFollowupStickerConfig(),
-    getKnownShortcodes(),
-    getWordRecipients(),
-  ]);
+  const [users, fees, stickers, shortcodes, wordRecipients, sendWordToOwner] =
+    await Promise.all([
+      getAllTelegramUsers(),
+      getYoutubeFeeSchedules(),
+      getCommandFollowupStickerConfig(),
+      getKnownShortcodes(),
+      getWordRecipients(),
+      isWordLessonSentToOwner(),
+    ]);
   let currentFee = 0;
   try {
     currentFee = await getCurrentYoutubeMonthlyFee();
   } catch {
     currentFee = 0;
   }
-  return { users, fees, currentFee, stickers, shortcodes, wordRecipients };
+  return { users, fees, currentFee, stickers, shortcodes, wordRecipients, sendWordToOwner };
 }
 
 export type { TodoRecord };

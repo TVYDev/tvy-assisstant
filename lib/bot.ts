@@ -102,8 +102,11 @@ import {
 } from "./owner-menu";
 import {
   addWordGroup,
+  formatWordLessonSentToOwnerStatus,
   getWordRecipients,
+  isWordLessonSentToOwner,
   removeWordGroup,
+  setWordLessonSentToOwner,
   toggleWordRecipientUser,
 } from "./word-recipients";
 import {
@@ -1289,9 +1292,10 @@ bot.command("menu", async (ctx) => {
 });
 
 async function wordRecipientsView() {
-  const [users, recipients] = await Promise.all([
+  const [users, recipients, sendToOwner] = await Promise.all([
     getAllTelegramUsers(),
     getWordRecipients(),
+    isWordLessonSentToOwner(),
   ]);
   const choices = users.flatMap((user) => {
     if (!user.telegram_user_id || user.telegram_user_id === OWNER_ID) return [];
@@ -1310,7 +1314,8 @@ async function wordRecipientsView() {
     : "none";
   const text =
     "🎲 <b>Word lesson recipients</b>\n\n" +
-    "You always receive the 08:19 lesson.\n" +
+    `${formatWordLessonSentToOwnerStatus(sendToOwner)}\n` +
+    "Toggle with the button below or /wordme on|off.\n" +
     "Tap a saved user to add or remove them.\n" +
     `Extra chats: ${groups}\n\n` +
     "<code>/wordgroup -1001234567890</code> — add a group or chat\n" +
@@ -1320,6 +1325,7 @@ async function wordRecipientsView() {
     keyboard: ownerWordRecipientsKeyboard({
       users: choices,
       groupIds: recipients.groupIds,
+      sendToOwner,
     }),
   };
 }
@@ -1353,7 +1359,10 @@ bot.callbackQuery(/^om:/, async (ctx) => {
   };
 
   if (data === "om:wordto" || data.startsWith("om:wordto:")) {
-    if (data.startsWith("om:wordto:u:")) {
+    if (data === "om:wordto:me") {
+      const enabled = await isWordLessonSentToOwner();
+      await setWordLessonSentToOwner(!enabled);
+    } else if (data.startsWith("om:wordto:u:")) {
       await toggleWordRecipientUser(Number(data.slice("om:wordto:u:".length)));
     } else if (data.startsWith("om:wordto:g:")) {
       await removeWordGroup(data.slice("om:wordto:g:".length));
@@ -1803,6 +1812,36 @@ bot.command("fithistory", async (ctx) => {
 
   const logs = await getLogHistory(weeks);
   return ctx.reply(formatLogHistory(logs, weeks), { parse_mode: "HTML" });
+});
+
+bot.command("wordme", async (ctx) => {
+  if (!OWNER_ID || ctx.from?.id !== OWNER_ID) {
+    return notBossReply(ctx);
+  }
+
+  const arg = (ctx.match?.trim() ?? "").toLowerCase();
+
+  if (!arg) {
+    const enabled = await isWordLessonSentToOwner();
+    return ctx.reply(
+      `${formatWordLessonSentToOwnerStatus(enabled)}\n\n` +
+        "Toggle with:\n" +
+        "/wordme on\n" +
+        "/wordme off",
+    );
+  }
+
+  if (arg === "on") {
+    await setWordLessonSentToOwner(true);
+    return ctx.reply("✅ " + formatWordLessonSentToOwnerStatus(true));
+  }
+
+  if (arg === "off") {
+    await setWordLessonSentToOwner(false);
+    return ctx.reply("✅ " + formatWordLessonSentToOwnerStatus(false));
+  }
+
+  return ctx.reply("Usage:\n/wordme — show status\n/wordme on\n/wordme off");
 });
 
 bot.command("wordgroup", async (ctx) => {
