@@ -30,6 +30,15 @@ describe("formatCronJobReply", () => {
     expect(text).toContain("OWNER_TELEGRAM_ID");
   });
 
+  it("formats a random word skipped because you turned it off", () => {
+    const text = formatCronJobReply("Random word", {
+      ok: true,
+      skipped: true,
+      reason: "owner_off",
+    });
+    expect(text).toContain("/wordme on");
+  });
+
   it("formats no due reminders", () => {
     const text = formatCronJobReply("Due reminders", {
       ok: true,

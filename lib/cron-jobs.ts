@@ -29,7 +29,11 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { fetchCambridgeWordOfTheDay, formatWordLesson } from "./cambridge-word";
 import { pickRandomLessonWord } from "./daily-word";
-import { lessonChatIds, getWordRecipients } from "./word-recipients";
+import {
+  lessonChatIds,
+  getWordRecipients,
+  isWordLessonSentToOwner,
+} from "./word-recipients";
 import { getDb } from "./db";
 import { words } from "./db/schema";
 import type { CronJobResult } from "./cron-job-result";
@@ -214,11 +218,12 @@ export async function runRandomWordCron(
 
   const summary = formatWordSummary(entry);
   const chatIds = lessonChatIds(
-    process.env.OWNER_TELEGRAM_ID,
+    ownerId,
     await getWordRecipients(),
+    await isWordLessonSentToOwner(),
   );
   if (chatIds.length === 0) {
-    return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
+    return { ok: true, dryRun, skipped: true, reason: "owner_off", summary };
   }
 
   if (!dryRun) {

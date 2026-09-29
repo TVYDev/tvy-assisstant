@@ -39,7 +39,7 @@ describe("parseCambridgeWordOfTheDay", () => {
 });
 
 describe("formatWordLesson", () => {
-  it("escapes HTML in the lesson sent to Telegram", () => {
+  it("formats the lesson with emoji sections and escapes HTML", () => {
     const text = formatWordLesson({
       word: "a < b",
       definition: "fish & chips",
@@ -48,8 +48,31 @@ describe("formatWordLesson", () => {
       audioUrl: null,
       audio: null,
     });
-    expect(text).toContain("<b>a &lt; b</b>");
-    expect(text).toContain("UK /eɪ/");
-    expect(text).toContain("fish &amp; chips");
+    expect(text).toBe(
+      [
+        "🔠",
+        "a &lt; b",
+        "",
+        "📣",
+        "UK · /eɪ/",
+        "",
+        "📋",
+        "fish &amp; chips",
+      ].join("\n"),
+    );
+  });
+
+  it("omits pronunciation when the word has none", () => {
+    const text = formatWordLesson({
+      word: "equinox",
+      definition: "when day and night are equal",
+      pronounciationRegion: null,
+      pronounciation: null,
+      audioUrl: null,
+      audio: null,
+    });
+    expect(text).toBe(
+      ["🔠", "equinox", "", "📋", "when day and night are equal"].join("\n"),
+    );
   });
 });

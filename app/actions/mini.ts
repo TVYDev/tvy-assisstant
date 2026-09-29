@@ -193,6 +193,10 @@ export async function updateStickerAction(
   return runOwner(initData, () => mutations.ownerUpdateSticker(input));
 }
 
+export async function setWordSendToMeAction(initData: string, enabled: boolean) {
+  return runOwner(initData, () => mutations.ownerSetWordSendToOwner(enabled));
+}
+
 export async function toggleWordUserAction(initData: string, userId: number) {
   return runOwner(initData, () => mutations.ownerToggleWordUser(userId));
 }

@@ -7,6 +7,7 @@ import {
   addWordGroupAction,
   removeWordGroupAction,
   runCronAction,
+  setWordSendToMeAction,
   toggleWordUserAction,
   updateStickerAction,
   updateUserAction,
@@ -238,8 +239,19 @@ export default function MorePage() {
             <div className="card-body py-4">
               <h2 className="card-title text-base">Word lesson recipients</h2>
               <p className="text-xs opacity-70">
-                The 08:19 lesson always goes to you. Add saved users or a group chat id.
+                Turn this off to stop the 08:19 lesson in your own chat. Other people and groups still receive it.
               </p>
+              <label className="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  className="toggle toggle-primary"
+                  checked={data.sendWordToOwner}
+                  onChange={(event) =>
+                    void run(() => setWordSendToMeAction(initData, event.target.checked))
+                  }
+                />
+                <span className="label-text">Send the 08:19 lesson to me</span>
+              </label>
               <ul className="flex flex-col gap-1">
                 {data.users
                   .filter((user) => user.telegram_user_id && user.telegram_user_id !== session?.user.id)

@@ -1,6 +1,7 @@
 import { getConfigOptional, setConfig } from "./youtube-subscription";
 
 const KEY = "daily_word_recipients";
+const SEND_TO_OWNER_KEY = "daily_word_send_to_owner";
 
 export type WordRecipients = {
   userIds: number[];
@@ -45,18 +46,42 @@ export function parseGroupChatId(raw: string): string | null {
   return /^-?\d{5,20}$/.test(id) ? id : null;
 }
 
-/** Owner is always included. Extra users and group chats are opt-in. */
+/** Extra users and group chats are opt-in. The owner is included unless turned off. */
 export function lessonChatIds(
   ownerId: string | undefined,
   recipients: WordRecipients,
+  includeOwner = true,
 ): string[] {
   const ids = new Set<string>();
-  if (ownerId && /^-?\d+$/.test(ownerId)) ids.add(ownerId);
-  for (const id of recipients.userIds) ids.add(String(id));
+  if (includeOwner && ownerId && /^-?\d+$/.test(ownerId)) ids.add(ownerId);
+  for (const id of recipients.userIds) {
+    if (!includeOwner && String(id) === ownerId) continue;
+    ids.add(String(id));
+  }
   for (const id of recipients.groupIds) {
     if (id !== ownerId) ids.add(id);
   }
   return [...ids];
+}
+
+/** Missing config means on, matching the previous always-send behavior. */
+export function parseWordSendToOwner(raw: string | null): boolean {
+  if (raw === null) return true;
+  return raw.trim().toLowerCase() !== "false";
+}
+
+export async function isWordLessonSentToOwner(): Promise<boolean> {
+  return parseWordSendToOwner(await getConfigOptional(SEND_TO_OWNER_KEY));
+}
+
+export async function setWordLessonSentToOwner(enabled: boolean): Promise<void> {
+  await setConfig(SEND_TO_OWNER_KEY, enabled ? "true" : "false");
+}
+
+export function formatWordLessonSentToOwnerStatus(enabled: boolean): string {
+  return enabled
+    ? "🔔 The 08:19 random word lesson is sent to you."
+    : "🔕 The 08:19 random word lesson is not sent to you. Other recipients still get it.";
 }
 
 export async function getWordRecipients(): Promise<WordRecipients> {

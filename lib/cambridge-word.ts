@@ -20,9 +20,13 @@ function escapeHtml(value: string): string {
 export function formatWordLesson(entry: CambridgeWordOfTheDay): string {
   const spoken = [entry.pronounciationRegion, entry.pronounciation]
     .filter(Boolean)
-    .join(" ");
-  const pronunciation = spoken ? `\n${escapeHtml(spoken)}` : "";
-  return `📖 <b>${escapeHtml(entry.word)}</b>${pronunciation}\n\n${escapeHtml(entry.definition)}`;
+    .join(" · ");
+  const lines = ["🔠", escapeHtml(entry.word)];
+  if (spoken) {
+    lines.push("", "📣", escapeHtml(spoken));
+  }
+  lines.push("", "📋", escapeHtml(entry.definition));
+  return lines.join("\n");
 }
 
 function decodeHtml(value: string): string {
