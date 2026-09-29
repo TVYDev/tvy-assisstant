@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runWordOfTheDayCron } from "@/lib/cron-jobs";
+import {
+  notifyOwnerWordOfTheDayFailure,
+  runWordOfTheDayCron,
+} from "@/lib/cron-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +40,9 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Word of the day cron failed:", message);
+    if (!dryRun) {
+      await notifyOwnerWordOfTheDayFailure(message);
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

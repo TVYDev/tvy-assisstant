@@ -17,6 +17,35 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+export function formatWordOfTheDayReport(input: {
+  ok: boolean;
+  skipped?: boolean;
+  entry?: Pick<
+    CambridgeWordOfTheDay,
+    "word" | "definition" | "pronounciationRegion" | "pronounciation"
+  > | null;
+  error?: string;
+}): string {
+  const headline = !input.ok
+    ? "❌ <b>Word of the day</b>\nFailed"
+    : input.skipped
+      ? "✅ <b>Word of the day</b>\nAlready saved today"
+      : "✅ <b>Word of the day</b>\nSaved";
+  const lines = [headline];
+  if (input.entry) {
+    lines.push(
+      "",
+      formatWordLesson({
+        ...input.entry,
+        audioUrl: null,
+        audio: null,
+      }),
+    );
+  }
+  if (input.error) lines.push("", escapeHtml(input.error));
+  return lines.join("\n");
+}
+
 export function formatWordLesson(entry: CambridgeWordOfTheDay): string {
   const spoken = [entry.pronounciationRegion, entry.pronounciation]
     .filter(Boolean)

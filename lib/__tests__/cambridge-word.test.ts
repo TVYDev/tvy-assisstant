@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatWordLesson, parseCambridgeWordOfTheDay } from "../cambridge-word";
+import {
+  formatWordLesson,
+  formatWordOfTheDayReport,
+  parseCambridgeWordOfTheDay,
+} from "../cambridge-word";
 
 const fixture = `
 <p class="fs12 tcu lmb-0">Word of the Day</p>
@@ -35,6 +39,32 @@ describe("parseCambridgeWordOfTheDay", () => {
 
   it("returns null when the word of the day block is missing", () => {
     expect(parseCambridgeWordOfTheDay("<html></html>")).toBeNull();
+  });
+});
+
+describe("formatWordOfTheDayReport", () => {
+  const entry = {
+    word: "equinox",
+    definition: "when day & night are equal",
+    pronounciationRegion: "UK",
+    pronounciation: "/ˈek/",
+  };
+
+  it("reports a saved word", () => {
+    const text = formatWordOfTheDayReport({ ok: true, entry });
+    expect(text).toContain("✅ <b>Word of the day</b>\nSaved");
+    expect(text).toContain("equinox");
+    expect(text).toContain("day &amp; night");
+  });
+
+  it("reports a failure with no word", () => {
+    const text = formatWordOfTheDayReport({
+      ok: false,
+      error: "Cambridge returned <500>",
+    });
+    expect(text).toContain("❌ <b>Word of the day</b>\nFailed");
+    expect(text).toContain("Cambridge returned &lt;500&gt;");
+    expect(text).not.toContain("🔠");
   });
 });
 

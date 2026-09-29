@@ -76,7 +76,7 @@ export const OWNER_MENU_CRONS_TEXT =
   "🌅 <b>Fitness reminder</b> — daily 07:50 (UTC+7)\n" +
   "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
   "⏰ <b>Due reminders</b> — daily 09:00 (UTC+7)\n" +
-  "📖 <b>Word of the day</b> — daily 06:00 (UTC+7)\n" +
+  "📖 <b>Word of the day</b> — daily 06:00 (UTC+7), result DM to you\n" +
   "🎲 <b>Random word</b> — daily 08:19 (UTC+7). You receive it until <code>/wordme off</code>\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
