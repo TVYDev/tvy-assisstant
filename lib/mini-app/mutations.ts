@@ -456,7 +456,7 @@ export async function ownerRunCron(
           : job === "word"
             ? await runWordOfTheDayCron()
             : job === "random-word"
-              ? await runRandomWordCron()
+              ? await runRandomWordCron({ random: true })
               : await runReminderCron();
   return formatCronJobReply(labels[job], result);
 }

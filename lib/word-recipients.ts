@@ -80,8 +80,8 @@ export async function setWordLessonSentToOwner(enabled: boolean): Promise<void> 
 
 export function formatWordLessonSentToOwnerStatus(enabled: boolean): string {
   return enabled
-    ? "🔔 The 08:19 random word lesson is sent to you."
-    : "🔕 The 08:19 random word lesson is not sent to you. Other recipients still get it.";
+    ? "🔔 The 08:19 lesson is sent to you."
+    : "🔕 The 08:19 lesson is not sent to you. Other recipients still get it.";
 }
 
 export async function getWordRecipients(): Promise<WordRecipients> {

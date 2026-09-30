@@ -1527,7 +1527,7 @@ bot.callbackQuery(/^om:/, async (ctx) => {
     }
     case "om:run:cron:random-word": {
       try {
-        const result = await runRandomWordCron();
+        const result = await runRandomWordCron({ random: true });
         await ctx.reply(formatCronJobReply("Random word", result), {
           parse_mode: "HTML",
         });

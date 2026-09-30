@@ -77,7 +77,7 @@ export const OWNER_MENU_CRONS_TEXT =
   "💪 <b>Gym motivation</b> — weekdays 16:45 (UTC+7)\n" +
   "⏰ <b>Due reminders</b> — daily 09:00 (UTC+7)\n" +
   "📖 <b>Word of the day</b> — daily 06:00 (UTC+7), result DM to you\n" +
-  "🎲 <b>Random word</b> — daily 08:19 (UTC+7). You receive it until <code>/wordme off</code>\n\n" +
+  "🎲 <b>Random word</b> — 08:19 (UTC+7) sends the word saved today. This button picks a random saved word. You receive it until <code>/wordme off</code>\n\n" +
   "Fitness and gym runs from here bypass skip checks (weekend / already logged / off).";
 
 export const OWNER_MENU_HELP_TEXT =
@@ -235,7 +235,7 @@ export const OWNER_HELP_TEXT =
   "\n" +
   "🎲 Word lesson:\n" +
   "  /wordme [on|off]\n" +
-  "    → Send the 08:19 random word to yourself (default on)\n" +
+  "    → Send the 08:19 lesson to yourself (default on)\n" +
   "  /wordgroup <chat id>\n" +
   "    → Add a group or chat, e.g. /wordgroup -1001234567890\n" +
   "  /wordgroup remove <chat id>\n" +
@@ -298,7 +298,7 @@ const OWNER_COMMANDS = [
   { command: "canceltask", description: "Cancel the add-todo/reminder wizard" },
   { command: "previewytreminder", description: "Preview monthly YT reminder" },
   { command: "listusers", description: "List all telegram users" },
-  { command: "wordme", description: "Toggle random word DM to yourself" },
+  { command: "wordme", description: "Toggle the 08:19 lesson DM to yourself" },
   { command: "wordgroup", description: "Add or remove a word-lesson chat" },
 ] as const;
 
