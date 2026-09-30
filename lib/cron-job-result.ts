@@ -32,9 +32,11 @@ export function formatCronJobReply(
                 ? "today's word is already saved"
                 : result.reason === "no_words"
                   ? "no words saved yet"
-                  : result.reason === "owner_off"
-                    ? "not sent to you — /wordme on. No other recipients"
-                    : (result.reason ?? "unknown");
+                  : result.reason === "no_word_today"
+                    ? "no word was saved today"
+                    : result.reason === "owner_off"
+                      ? "not sent to you — /wordme on. No other recipients"
+                      : (result.reason ?? "unknown");
     return `⏭ <b>${jobName}</b> skipped: ${reason}`;
   }
 

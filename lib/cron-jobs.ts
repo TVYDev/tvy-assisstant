@@ -32,7 +32,7 @@ import {
   formatWordLesson,
   formatWordOfTheDayReport,
 } from "./cambridge-word";
-import { pickRandomLessonWord } from "./daily-word";
+import { getTodaysLessonWord, pickRandomLessonWord } from "./daily-word";
 import {
   lessonChatIds,
   getWordRecipients,
@@ -300,18 +300,24 @@ export async function runWordOfTheDayCron(
 }
 
 export async function runRandomWordCron(
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; random?: boolean } = {},
 ): Promise<CronJobResult> {
   const dryRun = options.dryRun ?? false;
+  const random = options.random ?? false;
   const ownerId = process.env.OWNER_TELEGRAM_ID;
   if (!ownerId) {
     return { ok: false, error: "OWNER_TELEGRAM_ID is not set" };
   }
 
-  const entry = await pickRandomLessonWord();
+  const entry = random ? await pickRandomLessonWord() : await getTodaysLessonWord();
 
   if (!entry) {
-    return { ok: true, dryRun, skipped: true, reason: "no_words" };
+    return {
+      ok: true,
+      dryRun,
+      skipped: true,
+      reason: random ? "no_words" : "no_word_today",
+    };
   }
 
   const summary = formatWordSummary(entry);

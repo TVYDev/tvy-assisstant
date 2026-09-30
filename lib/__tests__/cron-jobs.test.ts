@@ -30,6 +30,15 @@ describe("formatCronJobReply", () => {
     expect(text).toContain("OWNER_TELEGRAM_ID");
   });
 
+  it("formats a lesson skipped because nothing was saved today", () => {
+    const text = formatCronJobReply("Random word", {
+      ok: true,
+      skipped: true,
+      reason: "no_word_today",
+    });
+    expect(text).toContain("no word was saved today");
+  });
+
   it("formats a random word skipped because you turned it off", () => {
     const text = formatCronJobReply("Random word", {
       ok: true,

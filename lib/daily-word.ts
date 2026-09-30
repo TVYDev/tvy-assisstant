@@ -54,7 +54,29 @@ async function loadWord(id: number): Promise<DailyWordLesson | null> {
   return row ?? null;
 }
 
-/** A random row from the whole words table. Saved so the home page can show what was sent today. */
+async function rememberLesson(id: number): Promise<void> {
+  await setConfig(
+    DAILY_WORD_KEY,
+    JSON.stringify({ date: todayInPhnomPenh(), id } satisfies StoredPick),
+  );
+}
+
+/** The word inserted today in Phnom Penh. The 08:19 cron sends this one. */
+export async function getTodaysLessonWord(): Promise<DailyWordLesson | null> {
+  const [picked] = await getDb()
+    .select(wordColumns())
+    .from(words)
+    .where(
+      sql`((${words.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Phnom_Penh')::date = (NOW() AT TIME ZONE 'Asia/Phnom_Penh')::date`,
+    )
+    .orderBy(sql`${words.createdAt} DESC, ${words.id} DESC`)
+    .limit(1);
+  if (!picked) return null;
+  await rememberLesson(picked.id);
+  return picked;
+}
+
+/** A random row from the whole words table. Used when the lesson is triggered by hand. */
 export async function pickRandomLessonWord(): Promise<DailyWordLesson | null> {
   const [picked] = await getDb()
     .select(wordColumns())
@@ -62,11 +84,7 @@ export async function pickRandomLessonWord(): Promise<DailyWordLesson | null> {
     .orderBy(sql`RANDOM()`)
     .limit(1);
   if (!picked) return null;
-
-  await setConfig(
-    DAILY_WORD_KEY,
-    JSON.stringify({ date: todayInPhnomPenh(), id: picked.id } satisfies StoredPick),
-  );
+  await rememberLesson(picked.id);
   return picked;
 }
 
